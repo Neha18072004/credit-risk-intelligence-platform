@@ -37,3 +37,25 @@ def bureau(sample_dir: Path):
     import pandas as pd
 
     return pd.read_csv(sample_dir / "bureau.csv")
+
+
+@pytest.fixture(scope="session")
+def joined_dataset():
+    """The application table LEFT JOINed with aggregated bureau features."""
+    from src.data.loader import build_dataset
+
+    return build_dataset("train")
+
+
+@pytest.fixture(scope="session")
+def fitted_preprocessor(joined_dataset):
+    """A :class:`CreditPreprocessor` fitted on the sample training split."""
+    from src.data.preprocessor import CreditPreprocessor
+
+    return CreditPreprocessor().fit(joined_dataset)
+
+
+@pytest.fixture(scope="session")
+def feature_matrix(fitted_preprocessor, joined_dataset):
+    """The model-ready feature frame produced from the sample data."""
+    return fitted_preprocessor.transform(joined_dataset)
