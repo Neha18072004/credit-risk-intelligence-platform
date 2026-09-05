@@ -1,0 +1,47 @@
+# ---------------------------------------------------------------------------
+# Credit Risk Intelligence Platform - pinned dependencies (Python 3.11)
+# ---------------------------------------------------------------------------
+
+# --- Core data stack ---
+pandas==2.2.3
+numpy==1.26.4
+scipy==1.13.1
+pyarrow==17.0.0
+
+# --- Modelling ---
+scikit-learn==1.5.2
+lightgbm==4.5.0
+catboost==1.2.7
+shap==0.46.0
+joblib==1.4.2
+
+# --- Visualisation / EDA ---
+matplotlib==3.9.2
+seaborn==0.13.2
+plotly==5.24.1
+
+# --- Database ---
+SQLAlchemy==2.0.36
+psycopg2-binary==2.9.10
+
+# --- NL -> SQL safety ---
+sqlglot==25.24.5
+
+# --- LLM providers (provider-agnostic client selects one at runtime) ---
+openai==1.54.4
+anthropic==0.39.0
+google-generativeai==0.8.3
+
+# --- Config / app ---
+pydantic==2.9.2
+pydantic-settings==2.6.1
+python-dotenv==1.0.1
+streamlit==1.39.0
+
+# --- Notebook execution (EDA) ---
+nbformat==5.10.4
+nbconvert==7.16.4
+ipykernel==6.29.5
+
+# --- Tests ---
+pytest==8.3.3
