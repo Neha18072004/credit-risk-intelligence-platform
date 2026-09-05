@@ -42,11 +42,42 @@ def test_sqlite_fallback_url() -> None:
     assert config.database_url.startswith("sqlite:///")
 
 
+def test_default_provider_is_local_and_keyless() -> None:
+    """The shipped default must work with no credential at all.
+
+    This is the contract behind "docker-compose up and nothing else": the
+    bundled local model runs on-box, so applicant data never leaves the host
+    and an evaluator needs no API key to exercise the chat feature.
+    """
+    config = Settings(_env_file=None)
+    assert config.llm_provider is LLMProvider.OLLAMA
+    assert config.llm_enabled is True
+    assert config.llm_api_key == ""
+    assert config.llm_disabled_reason == ""
+
+
+def test_only_hosted_providers_require_a_key() -> None:
+    assert LLMProvider.OLLAMA.requires_api_key is False
+    assert LLMProvider.NONE.requires_api_key is False
+    for provider in (LLMProvider.OPENAI, LLMProvider.ANTHROPIC, LLMProvider.GEMINI):
+        assert provider.requires_api_key is True
+
+
 def test_llm_disabled_without_key() -> None:
-    """A selected provider with no key must report itself as disabled."""
+    """A hosted provider with no key reports as disabled, and never crashes."""
     assert Settings(llm_provider=LLMProvider.ANTHROPIC, anthropic_api_key="").llm_enabled is False
     assert Settings(llm_provider=LLMProvider.NONE).llm_enabled is False
     assert Settings(llm_provider=LLMProvider.OPENAI, openai_api_key="sk-x").llm_enabled is True
+
+
+def test_disabled_reason_is_actionable() -> None:
+    """The degraded-mode message must name the fix, not just state failure."""
+    reason = Settings(llm_provider=LLMProvider.GEMINI, google_api_key="").llm_disabled_reason
+    assert "GOOGLE_API_KEY" in reason
+    assert "ollama" in reason.lower()
+
+    none_reason = Settings(llm_provider=LLMProvider.NONE).llm_disabled_reason
+    assert "ollama" in none_reason.lower()
 
 
 def test_llm_api_key_follows_provider() -> None:

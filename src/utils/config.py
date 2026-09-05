@@ -37,12 +37,27 @@ class DataMode(str, Enum):
 
 
 class LLMProvider(str, Enum):
-    """Supported LLM back-ends.  ``NONE`` disables the chat feature cleanly."""
+    """Supported LLM back-ends.
 
+    ``OLLAMA`` is the default and needs no API key: the model runs locally as a
+    Docker Compose service alongside the app. Applicant data therefore never
+    leaves the host, which is the correct posture for a credit-risk system, and
+    the whole platform runs with ``docker-compose up`` and no credentials.
+
+    The hosted providers are optional overrides for anyone who prefers them.
+    ``NONE`` disables the chat feature cleanly.
+    """
+
+    OLLAMA = "ollama"
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     GEMINI = "gemini"
     NONE = "none"
+
+    @property
+    def requires_api_key(self) -> bool:
+        """True for hosted providers; the local runtime needs no credential."""
+        return self in {LLMProvider.OPENAI, LLMProvider.ANTHROPIC, LLMProvider.GEMINI}
 
 
 class Settings(BaseSettings):
@@ -81,12 +96,20 @@ class Settings(BaseSettings):
     sqlite_path: Path = PROJECT_ROOT / "data" / "credit_risk.db"
 
     # ---------------------------------------------------------------- llm ---
-    llm_provider: LLMProvider = LLMProvider.NONE
-    llm_model: str = "claude-sonnet-4-5-20250929"
+    llm_provider: LLMProvider = LLMProvider.OLLAMA
+    # qwen2.5-coder is chosen for its text-to-SQL accuracy at 7B; llama3.1:8b is
+    # the general-purpose fallback if the preferred model cannot be pulled.
+    llm_model: str = "qwen2.5-coder:7b"
     llm_temperature: float = Field(default=0.0, ge=0.0, le=2.0)
     llm_max_tokens: int = Field(default=1024, gt=0)
-    llm_timeout_seconds: int = Field(default=45, gt=0)
+    llm_timeout_seconds: int = Field(default=120, gt=0)
 
+    # --- local runtime (default; no credential required) ---
+    ollama_base_url: str = "http://ollama:11434"
+    ollama_fallback_model: str = "llama3.1:8b"
+    ollama_keep_alive: str = "10m"
+
+    # --- optional hosted overrides ---
     openai_api_key: str = ""
     anthropic_api_key: str = ""
     google_api_key: str = ""
@@ -169,8 +192,9 @@ class Settings(BaseSettings):
 
     @property
     def llm_api_key(self) -> str:
-        """API key belonging to the currently selected provider ("" if unset)."""
+        """API key for the selected provider ("" for local or unset providers)."""
         return {
+            LLMProvider.OLLAMA: "",
             LLMProvider.OPENAI: self.openai_api_key,
             LLMProvider.ANTHROPIC: self.anthropic_api_key,
             LLMProvider.GEMINI: self.google_api_key,
@@ -179,8 +203,39 @@ class Settings(BaseSettings):
 
     @property
     def llm_enabled(self) -> bool:
-        """True only when a provider is selected *and* its key is present."""
-        return self.llm_provider is not LLMProvider.NONE and bool(self.llm_api_key)
+        """Whether the talk-to-data feature can run as configured.
+
+        The local provider is always enabled -- it needs no credential, so the
+        default install works out of the box. A hosted provider is enabled only
+        when its key is actually present; otherwise the chat degrades to a clear
+        message instead of failing at request time.
+        """
+        if self.llm_provider is LLMProvider.NONE:
+            return False
+        if not self.llm_provider.requires_api_key:
+            return True
+        return bool(self.llm_api_key)
+
+    @property
+    def llm_disabled_reason(self) -> str:
+        """Operator-facing explanation of why chat is unavailable ("" if it is)."""
+        if self.llm_enabled:
+            return ""
+        if self.llm_provider is LLMProvider.NONE:
+            return (
+                "LLM_PROVIDER is set to 'none'. Set LLM_PROVIDER=ollama to use the "
+                "bundled local model (no API key required)."
+            )
+        key_variable = {
+            LLMProvider.OPENAI: "OPENAI_API_KEY",
+            LLMProvider.ANTHROPIC: "ANTHROPIC_API_KEY",
+            LLMProvider.GEMINI: "GOOGLE_API_KEY",
+        }[self.llm_provider]
+        return (
+            f"LLM_PROVIDER is '{self.llm_provider.value}' but {key_variable} is not set. "
+            "Either set that key, or switch to LLM_PROVIDER=ollama to run the bundled "
+            "local model with no credential."
+        )
 
     def ensure_directories(self) -> None:
         """Create the writable output directories if they do not yet exist."""
