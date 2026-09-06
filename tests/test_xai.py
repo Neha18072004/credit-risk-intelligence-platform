@@ -268,3 +268,41 @@ def test_contribution_strength_buckets() -> None:
     assert FeatureContribution("EXT_SOURCE_MEAN", 0.2, 0.30).strength == "moderate"
     assert FeatureContribution("EXT_SOURCE_MEAN", 0.2, 0.08).strength == "minor"
     assert FeatureContribution("EXT_SOURCE_MEAN", 0.2, 0.01).strength == "negligible"
+
+
+def test_no_raw_identifier_reaches_an_explanation(trained_artifacts, joined_dataset) -> None:
+    """Every feature that can surface must have a readable label.
+
+    A guard rather than a spot check: the first version labelled the engineered
+    features by hand and left whole families -- the property block, document
+    flags, bureau enquiry windows -- to fall through to a de-underscored raw
+    name, so 'obs 60 cnt social circle' appeared in the UI.
+    """
+    from src.ml.predict import load_bundle
+    from src.xai.feature_labels import humanise
+
+    bundle = load_bundle()
+    features = bundle.preprocessor.transform(joined_dataset.head(400))
+    if bundle.metadata.get("requires_string_categoricals"):
+        for column in bundle.metadata["categorical_features"]:
+            features[column] = features[column].astype(str)
+
+    importance = bundle.explainer.global_importance(
+        features[bundle.feature_names], sample_size=400, top_n=40
+    )
+    unlabelled = [
+        feature for feature in importance["feature"]
+        if "_" in humanise(feature) or humanise(feature).isupper()
+    ]
+    assert not unlabelled, f"features without a plain-English label: {unlabelled}"
+
+
+def test_feature_families_are_labelled_by_rule() -> None:
+    """Whole families are handled by rule, not by 42 near-identical entries."""
+    from src.xai.feature_labels import humanise
+
+    assert humanise("FLOORSMAX_MEDI") == "highest floor of the building (median)"
+    assert humanise("COMMONAREA_AVG") == "common area of the building (average)"
+    assert humanise("LIVINGAREA_MODE") == "living area of the building (most common)"
+    assert humanise("FLAG_DOCUMENT_3") == "submitted document 3"
+    assert humanise("AMT_REQ_CREDIT_BUREAU_YEAR") == "credit bureau enquiries in the last year"

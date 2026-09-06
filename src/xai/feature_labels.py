@@ -97,7 +97,51 @@ FEATURE_LABELS: Final[dict[str, str]] = {
     "FLAG_EMP_PHONE": "provided an employer phone number",
     "FLAG_PHONE": "provided a home phone number",
     "FLAG_EMAIL": "provided an email address",
+    "OBS_60_CNT_SOCIAL_CIRCLE": "contacts observed in social circle (60-day window)",
+    "REGION_RATING_CLIENT_W_CITY": "region risk rating (city-adjusted)",
+    "HOUR_APPR_PROCESS_START": "hour the application was submitted",
+    "WEEKDAY_APPR_PROCESS_START": "day the application was submitted",
+    "OWN_CAR_AGE": "age of the applicant's car",
+    "NAME_TYPE_SUITE": "who accompanied the applicant",
 }
+
+# The Home Credit property block: 14 building attributes, each present as an
+# _AVG, _MODE and _MEDI variant. Labelling them one by one would be 42 near
+# identical entries, so the stem is named once and the suffix is rendered as the
+# statistic it is.
+_BUILDING_STEMS: Final[dict[str, str]] = {
+    "APARTMENTS": "apartment size",
+    "BASEMENTAREA": "basement area",
+    "YEARS_BEGINEXPLUATATION": "years since the building entered service",
+    "YEARS_BUILD": "age of the building",
+    "COMMONAREA": "common area",
+    "ELEVATORS": "number of elevators",
+    "ENTRANCES": "number of entrances",
+    "FLOORSMAX": "highest floor",
+    "FLOORSMIN": "lowest floor",
+    "LANDAREA": "land area",
+    "LIVINGAPARTMENTS": "number of living apartments",
+    "LIVINGAREA": "living area",
+    "NONLIVINGAPARTMENTS": "number of non-living apartments",
+    "NONLIVINGAREA": "non-living area",
+    "TOTALAREA": "total area",
+    "FONDKAPREMONT": "building maintenance fund",
+    "HOUSETYPE": "building type",
+    "WALLSMATERIAL": "wall material",
+    "EMERGENCYSTATE": "building emergency state",
+}
+
+_BUILDING_SUFFIXES: Final[dict[str, str]] = {
+    "AVG": "average", "MODE": "most common", "MEDI": "median",
+}
+
+
+def _building_label(feature: str) -> str | None:
+    """Label a property-block column, or None if it is not one."""
+    stem, _, suffix = feature.rpartition("_")
+    if stem in _BUILDING_STEMS and suffix in _BUILDING_SUFFIXES:
+        return f"{_BUILDING_STEMS[stem]} of the building ({_BUILDING_SUFFIXES[suffix]})"
+    return None
 
 # Features whose value is a 0/1 flag, so "= 1" should read as "yes".
 _BINARY_FEATURES: Final[frozenset[str]] = frozenset(
@@ -138,6 +182,14 @@ def humanise(feature: str) -> str:
     """
     if feature in FEATURE_LABELS:
         return FEATURE_LABELS[feature]
+    building = _building_label(feature)
+    if building is not None:
+        return building
+    if feature.startswith("FLAG_DOCUMENT_"):
+        return f"submitted document {feature.rsplit('_', 1)[-1]}"
+    if feature.startswith("AMT_REQ_CREDIT_BUREAU_"):
+        window = feature.rsplit("_", 1)[-1].lower()
+        return f"credit bureau enquiries in the last {window}"
     if " = " in feature:  # one-hot indicator: "NAME_EDUCATION_TYPE = Higher education"
         column, _, level = feature.partition(" = ")
         label = FEATURE_LABELS.get(column.strip(), column.strip().replace("_", " ").lower())
