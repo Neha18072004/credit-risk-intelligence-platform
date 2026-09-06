@@ -218,6 +218,17 @@ Findings on the **real 307,511-row dataset** (9 insights; 6 shown):
 | The employment anomaly is a population | 18% carry the 365243 sentinel; they are pensioners, and they default *less* (5.4% vs 8.7%) |
 | Education spreads risk | **1.8%** (Academic degree) to **10.9%** (Lower secondary) |
 
+![Default rate by external credit score band](reports/figures/04_external_scores.png)
+
+*The strongest single signal, and monotonic across every band — which is what
+makes it usable for policy. Error bars are 95% Wilson intervals.*
+
+![Affordability ratios](reports/figures/05_affordability.png)
+
+*Loan-to-income (left) is an inverted U: both extremes are lower-risk than the
+middle. Instalment-to-income (right) rises consistently. Only the second is a
+usable affordability constraint.*
+
 The loan-to-income finding is the one worth dwelling on, because it contradicts
 the obvious assumption. The most heavily leveraged applicants are **not** the
 riskiest — most likely because very high loan-to-income ratios pick up secured
@@ -328,6 +339,8 @@ calibrator fitted on out-of-fold predictions corrects that:
 | Before | 0.1711 | — | 0.0807 |
 | **After** | **0.0663** | **0.0807** | 0.0807 |
 
+![Calibration curve](reports/figures/11_calibration.png)
+
 **Caveat, stated on the chart itself:** the calibrator was fitted on the same
 out-of-fold predictions the reliability curve is drawn from, so that curve is
 in-sample with respect to calibration and looks better than it would on fresh
@@ -360,6 +373,8 @@ Bands are defined so the *marginal* applicant is bounded, not the group average:
 
 The High band is an eighth of the book and contains two-fifths of the defaults.
 
+![Risk bands](reports/figures/12_risk_bands.png)
+
 An earlier version set the Low edge wherever the *average* rate below it met a
 5% target. Reading the generated policy rules exposed the flaw: a rule
 predicting 12.9% default was being labelled "Low", because averaging over a wide
@@ -389,6 +404,11 @@ and the policy rules — draw their vocabulary from one shared module
 rendered as "share of external credit still unpaid = 59%" and the two can never
 describe the same feature differently. Raw SHAP values remain available in the
 table for anyone who wants them.
+
+![Local SHAP explanation](reports/figures/14_shap_local_explanation.png)
+
+*One applicant's contributions, in plain English rather than raw column names.
+Blue reduces risk, red increases it.*
 
 The explainer dispatches on model family: CatBoost's native exact `ShapValues`,
 LightGBM's `TreeExplainer`, or exact linear Shapley values for the logistic
