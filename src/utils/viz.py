@@ -19,8 +19,9 @@ Encoding rules this module enforces by construction:
 * Risk bands get the reserved status colours, which are never used for a
   plain data series, and always ship with a text label rather than relying on
   colour alone.
-* Never two y-axes on one plot. :func:`stacked_panels` exists so that
-  "volume and rate" is drawn as two panels sharing an x-axis instead.
+* Never two y-axes on one plot. Aligning two scales invents a correlation that
+  is not in the data, so "volume and rate" is drawn as two panels -- side by
+  side, or stacked on a shared x-axis -- rather than as a dual-axis chart.
 """
 
 from __future__ import annotations
@@ -333,33 +334,6 @@ def save_figure(fig: Figure, name: str, directory: Path | None = None) -> Path:
     fig.savefig(path)
     logger.debug("Saved figure -> %s", path)
     return path
-
-
-def rate_and_volume_panels(
-    figsize: tuple[float, float] = (9.0, 6.0),
-) -> tuple[Figure, Axes, Axes]:
-    """Two panels sharing one x-axis: a rate above, its supporting volume below.
-
-    This exists to make the dual-axis chart unnecessary. Plotting "default rate"
-    and "number of applicants" against two y-scales on one plot invents a
-    relationship out of an arbitrary scale alignment; two stacked panels show
-    the same two measures honestly, each on its own axis.
-
-    Args:
-        figsize: Figure size in inches.
-
-    Returns:
-        ``(figure, rate_axes, volume_axes)``.
-    """
-    import matplotlib.pyplot as plt
-
-    fig, (ax_rate, ax_volume) = plt.subplots(
-        2, 1, sharex=True, figsize=figsize, height_ratios=[2.2, 1.0],
-    )
-    style_axes(ax_rate)
-    style_axes(ax_volume)
-    fig.subplots_adjust(hspace=0.18)
-    return fig, ax_rate, ax_volume
 
 
 def new_figure(figsize: tuple[float, float] = (9.0, 5.0)) -> tuple[Figure, Axes]:

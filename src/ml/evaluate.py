@@ -39,7 +39,6 @@ from src.utils.config import settings
 from src.utils.helpers import read_json, write_json
 from src.utils.logger import get_logger
 from src.utils.viz import (
-    BASELINE,
     INK_MUTED,
     INK_SECONDARY,
     RISK_BAND_COLORS,

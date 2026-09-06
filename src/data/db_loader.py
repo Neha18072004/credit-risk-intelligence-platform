@@ -22,7 +22,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.engine import Engine
 
-from src.data.loader import aggregate_bureau, build_dataset, load_bureau
+from src.data.loader import build_dataset, load_bureau
 from src.data.preprocessor import clean_applications, engineer_features
 from src.utils.config import settings
 from src.utils.docker_utils import get_engine

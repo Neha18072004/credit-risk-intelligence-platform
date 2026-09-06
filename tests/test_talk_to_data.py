@@ -9,7 +9,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from src.talk_to_data.memory import ConversationMemory, ConversationTurn
+from src.talk_to_data.memory import ConversationMemory
 from src.talk_to_data.nl_to_sql import TalkToData
 from src.talk_to_data.prompt_templates import (
     FEW_SHOT_EXAMPLES,
@@ -20,7 +20,6 @@ from src.talk_to_data.prompt_templates import (
 from src.talk_to_data.query_runner import (
     deterministic_summary,
     execute_sql,
-    fetch_schema,
     rows_to_markdown,
     summarise_result,
     verify_summary_grounding,

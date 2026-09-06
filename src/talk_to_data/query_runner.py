@@ -27,7 +27,6 @@ from sqlalchemy.exc import SQLAlchemyError
 from src.talk_to_data.llm_client import LLMClient, LLMUnavailableError, get_llm_client
 from src.talk_to_data.prompt_templates import build_summary_prompt
 from src.talk_to_data.sql_validator import SQLValidator
-from src.utils.config import settings
 from src.utils.docker_utils import get_engine
 from src.utils.logger import get_logger
 

@@ -21,7 +21,7 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Iterable
+from typing import Any
 
 from src.utils.config import settings
 from src.utils.logger import get_logger

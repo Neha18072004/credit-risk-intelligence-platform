@@ -33,13 +33,7 @@ import pandas as pd
 from src.talk_to_data.llm_client import LLMClient, LLMUnavailableError, get_llm_client
 from src.talk_to_data.memory import ConversationMemory
 from src.talk_to_data.prompt_templates import PROMPT_VERSION, build_sql_prompt
-from src.talk_to_data.query_runner import (
-    QueryResult,
-    execute_sql,
-    fetch_schema,
-    rows_to_markdown,
-    summarise_result,
-)
+from src.talk_to_data.query_runner import execute_sql, fetch_schema, summarise_result
 from src.talk_to_data.sql_validator import SQLValidator
 from src.utils.config import settings
 from src.utils.logger import get_logger

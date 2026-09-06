@@ -46,7 +46,6 @@ from src.utils.viz import (
     label_bars,
     new_figure,
     ordinal_ramp,
-    rate_and_volume_panels,
     save_figure,
     style_axes,
 )

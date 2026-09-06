@@ -25,13 +25,11 @@ from __future__ import annotations
 
 import time
 from dataclasses import asdict, dataclass, field
-from pathlib import Path
 from typing import Any, Final
 
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.calibration import calibration_curve
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.isotonic import IsotonicRegression
