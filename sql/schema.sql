@@ -116,6 +116,12 @@ CREATE TABLE bureau_summary (
 -- ---------------------------------------------------------------------------
 CREATE TABLE credit_behaviour (
     sk_id_curr                  INTEGER PRIMARY KEY,
+    -- Whether there is any history at all. Present as explicit flags because
+    -- "never borrowed from us" is a distinct state, not a missing value: a
+    -- CASE expression that only tests ever_paid_late = 1 will otherwise sweep
+    -- these applicants into the "paid on time" branch and report a wrong answer.
+    has_applied_before          SMALLINT,           -- 1 = has applied to us before
+    has_prior_loan              SMALLINT,           -- 1 = has repaid instalments to us
     -- prior applications to this lender
     prev_application_count      INTEGER,
     prev_refused_count          INTEGER,

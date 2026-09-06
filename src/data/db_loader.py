@@ -99,6 +99,11 @@ BUREAU_SUMMARY_COLUMNS: Final[dict[str, str]] = {
 # elsewhere, this is how the applicant behaved with *us*.
 CREDIT_BEHAVIOUR_COLUMNS: Final[dict[str, str]] = {
     "SK_ID_CURR": "sk_id_curr",
+    # Explicit flags first. Without them "never borrowed from us" is only a NULL,
+    # and a CASE expression's ELSE branch silently swallows those applicants into
+    # whichever label it happens to end on.
+    "PREV_HAS_HISTORY": "has_applied_before",
+    "INST_HAS_HISTORY": "has_prior_loan",
     "PREV_COUNT": "prev_application_count",
     "PREV_REFUSED_COUNT": "prev_refused_count",
     "PREV_REFUSED_RATE": "prev_refused_rate",

@@ -30,7 +30,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Final
 
-PROMPT_VERSION: Final[str] = "1.6.0"
+PROMPT_VERSION: Final[str] = "1.7.0"
 
 # --------------------------------------------------------------------------- #
 # Schema description
@@ -76,6 +76,10 @@ TABLE bureau_summary  -- bureau rolled up to one row per applicant (all applican
 
 TABLE credit_behaviour  -- prior conduct with THIS lender (repayment behaviour)
   sk_id_curr INT PK FK -> applications.sk_id_curr
+  has_applied_before SMALLINT (1 = has applied to us before)
+  has_prior_loan SMALLINT (1 = has actually repaid instalments to us)
+      IMPORTANT: when 0 or NULL, every column below is NULL. Give that group its
+      own label rather than letting it fall into a CASE ELSE branch.
   prev_application_count, prev_refused_count INT
   prev_refused_rate FLOAT (share of prior applications this lender declined)
   prev_ever_refused SMALLINT (1 = declined at least once before)
@@ -216,17 +220,25 @@ FEW_SHOT_EXAMPLES: Final[tuple[FewShotExample, ...]] = (
     FewShotExample(
         question="Do applicants who paid late on previous loans default more often?",
         sql=(
-            "SELECT CASE WHEN c.ever_paid_late = 1 THEN 'Paid late before'\n"
-            "            ELSE 'Always paid on time' END AS repayment_history,\n"
+            "SELECT CASE\n"
+            "         WHEN c.has_prior_loan = 0 OR c.has_prior_loan IS NULL\n"
+            "           THEN 'No prior loan with us'\n"
+            "         WHEN c.ever_paid_late = 1 THEN 'Paid late before'\n"
+            "         ELSE 'Always paid on time'\n"
+            "       END AS repayment_history,\n"
             "       COUNT(*) AS applicants,\n"
             "       ROUND(AVG(a.target) * 100, 2) AS default_rate_pct,\n"
             "       ROUND(AVG(c.late_payment_rate)::numeric * 100, 2) AS avg_late_instalment_pct\n"
             "FROM applications a\n"
-            "JOIN credit_behaviour c ON c.sk_id_curr = a.sk_id_curr\n"
+            "LEFT JOIN credit_behaviour c ON c.sk_id_curr = a.sk_id_curr\n"
             "WHERE a.target IS NOT NULL\n"
-            "GROUP BY c.ever_paid_late"
+            "GROUP BY repayment_history"
         ),
-        teaches="the repayment-behaviour table; joining it, and casting a float before ROUND",
+        teaches=(
+            "the repayment-behaviour table; separating 'no history' from 'paid on time' "
+            "instead of letting NULL fall into an ELSE branch, and casting a float "
+            "before ROUND"
+        ),
     ),
     FewShotExample(
         question="How much data is missing for the external credit scores?",
@@ -263,6 +275,10 @@ ROUND(AVG(target) * 100, 2). Always add WHERE target IS NOT NULL.
 - days_credit is a negative offset in days; credit_day_overdue is a positive \
 number of days past due.
 - Round money to whole units and rates to 2 decimal places.
+- Some applicants have no prior history, so credit_behaviour and bureau_summary \
+rows may be absent or hold NULLs. Never let NULL fall into a CASE ELSE branch \
+that means something specific: test the has_* flag explicitly and give "no \
+history" its own label. Use LEFT JOIN when the question is about all applicants.
 - PostgreSQL has no ROUND(double precision, int). When rounding a FLOAT column \
 to decimal places, cast first: ROUND(AVG(ext_source_mean)::numeric, 2). Columns \
 typed INT or SMALLINT (such as target) need no cast.

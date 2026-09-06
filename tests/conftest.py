@@ -106,12 +106,18 @@ def trained_artifacts(joined_dataset):
 
 
 @pytest.fixture(scope="session")
-def analytics_db(tmp_path_factory):
+def analytics_db(tmp_path_factory, trained_artifacts):
     """A populated SQLite analytics database.
 
     The talk-to-data suite must run with no Postgres server and no model
     runtime, so the whole stack is exercised against SQLite built from the same
     loader that populates Postgres in production.
+
+    Depends on ``trained_artifacts`` explicitly. The predictions table needs a
+    trained model, and without the dependency the suite passed only because
+    training happened to run first -- running this file alone left predictions
+    empty and two query-pattern tests failed. Order-dependent tests are worse
+    than failing ones, because they fail somewhere else later.
     """
     from sqlalchemy import create_engine
 

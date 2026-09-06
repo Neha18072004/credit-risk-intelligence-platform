@@ -567,3 +567,44 @@ def test_repayment_behaviour_is_queryable_end_to_end(live_schema, analytics_db) 
     result = execute_sql(validation.sql, engine=analytics_db)
     assert result.success, result.error
     assert result.row_count > 0
+
+
+def test_no_history_is_distinguishable_from_good_history(analytics_db, live_schema) -> None:
+    """"Never borrowed from us" must not be swept into "always paid on time".
+
+    Regression test from a real wrong answer: the worked example tested only
+    `ever_paid_late = 1`, so applicants with no prior loan -- whose columns are
+    all NULL -- fell into the ELSE branch and were reported as having always
+    paid on time. The query was valid, the SQL ran, and the answer was wrong.
+    """
+    if "credit_behaviour" not in live_schema:
+        pytest.skip("credit_behaviour requires the auxiliary fixtures")
+    assert "has_prior_loan" in live_schema["credit_behaviour"], (
+        "an explicit history flag is required; NULL alone is not a usable label"
+    )
+
+    validator = SQLValidator(live_schema, max_rows=200)
+    sql = (
+        "SELECT CASE WHEN c.has_prior_loan = 0 OR c.has_prior_loan IS NULL "
+        "              THEN 'No prior loan' "
+        "            WHEN c.ever_paid_late = 1 THEN 'Paid late' "
+        "            ELSE 'On time' END AS history, COUNT(*) AS n "
+        "FROM applications a LEFT JOIN credit_behaviour c ON c.sk_id_curr = a.sk_id_curr "
+        "GROUP BY history"
+    )
+    validation = validator.validate(sql)
+    assert validation.is_valid, validation.reason
+    result = execute_sql(validation.sql, engine=analytics_db)
+    assert result.success, result.error
+    # Each label must appear exactly once; a duplicate means NULL leaked.
+    labels = result.rows["history"].tolist()
+    assert len(labels) == len(set(labels)), f"duplicate labels: {labels}"
+
+
+def test_prompt_warns_about_null_in_case_branches() -> None:
+    """The rule has to be stated, not only demonstrated once."""
+    from src.talk_to_data.prompt_templates import SYSTEM_PROMPT
+
+    lowered = SYSTEM_PROMPT.lower()
+    assert "null" in lowered and "else" in lowered
+    assert "has_" in lowered
