@@ -1,0 +1,65 @@
+# ===========================================================================
+# Continuous integration.
+#
+# The suite is deliberately runnable with no PostgreSQL server, no model
+# runtime and no API key -- SQLite and a scripted LLM stand in -- so CI needs
+# nothing but Python. That property is worth protecting: a test suite that
+# only runs on a developer's laptop stops being run.
+# ===========================================================================
+name: tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyflakes
+
+      - name: Lint (unused imports and undefined names)
+        run: pyflakes src/ tests/ notebooks/*.py
+
+      - name: Regenerate the synthetic fixtures
+        # Proves the fixtures are reproducible from the seed rather than
+        # depending on the committed CSVs being present and unmodified.
+        run: python -m src.data.generate_sample
+
+      - name: Run the test suite
+        run: pytest -q --maxfail=3
+        env:
+          DATA_MODE: sample
+          USE_SQLITE_FALLBACK: "true"
+          LLM_PROVIDER: none
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the application image
+        # The compose stack needs a ~4.7GB model pull, which is not a sensible
+        # CI job. Building the image still catches a broken Dockerfile or a
+        # dependency that does not resolve.
+        run: docker build -t credit-risk-platform:ci .
+
+      - name: Validate the compose file
+        run: docker compose config --quiet

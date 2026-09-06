@@ -166,3 +166,59 @@ def test_final_model_is_calibrated(trained_artifacts) -> None:
     metrics = trained_artifacts["metrics"]["oof_calibrated"]
     assert metrics["mean_predicted"] == pytest.approx(metrics["observed_rate"], abs=0.01)
     assert metrics["brier"] < trained_artifacts["metrics"]["oof_uncalibrated"]["brier"]
+
+
+# ------------------------------------------------------ hyperparameters ----
+def test_search_spaces_cover_every_candidate() -> None:
+    from src.ml.train import SEARCH_SPACES
+
+    assert set(SEARCH_SPACES) == {"logistic", "lightgbm", "catboost"}
+    for name, space in SEARCH_SPACES.items():
+        assert space, f"{name} has an empty search space"
+        for parameter, values in space.items():
+            assert len(values) >= 2, f"{name}.{parameter} has nothing to search"
+
+
+def test_tuning_scores_on_the_selection_metric(feature_matrix, fitted_preprocessor) -> None:
+    """Tuning for one objective and selecting on another produces a model that
+    looks better and performs worse, so both use average precision."""
+    import numpy as np
+    import pandas as pd
+
+    from src.ml.train import tune_candidate
+
+    rng = np.random.default_rng(0)
+    labels = pd.Series(rng.binomial(1, 0.1, len(feature_matrix)), index=feature_matrix.index)
+    result = tune_candidate(
+        "logistic", feature_matrix, labels, fitted_preprocessor, 10.0, n_iter=2
+    )
+    assert "model__C" in result["best_params"]
+    assert 0.0 <= result["best_score"] <= 1.0
+    assert result["n_candidates"] == 2
+
+
+def test_tuned_parameters_reach_the_model(fitted_preprocessor) -> None:
+    """A search that does not change the fitted estimator is decoration."""
+    from src.ml.train import _instantiate
+
+    default = _instantiate("lightgbm", fitted_preprocessor, 10.0)
+    tuned = _instantiate(
+        "lightgbm", fitted_preprocessor, 10.0, params={"num_leaves": 8, "learning_rate": 0.02}
+    )
+    assert tuned.get_params()["num_leaves"] == 8
+    assert tuned.get_params()["learning_rate"] == 0.02
+    assert default.get_params()["num_leaves"] != 8
+
+
+def test_tuning_is_off_by_default(joined_dataset) -> None:
+    """The documented quick-start must stay quick."""
+    from src.utils.config import Settings
+
+    assert Settings(_env_file=None).tune_hyperparameters is False
+
+
+def test_metrics_record_the_search(trained_artifacts) -> None:
+    """The search space and outcome must be recoverable from the artifacts."""
+    tuning = trained_artifacts["metrics"]["tuning"]
+    assert "enabled" in tuning
+    assert tuning["scoring"] == "average_precision"

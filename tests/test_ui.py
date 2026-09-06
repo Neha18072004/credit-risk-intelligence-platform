@@ -17,7 +17,7 @@ from streamlit.testing.v1 import AppTest
 from src.utils.config import PROJECT_ROOT
 
 APP_PATH = str(PROJECT_ROOT / "src" / "ui" / "app.py")
-SECTIONS = ["Overview", "Predict", "Explain", "Rules", "Chat"]
+SECTIONS = ["Overview", "Predict", "Explain", "Rules", "Chat", "Audit"]
 
 
 @pytest.fixture(scope="module")

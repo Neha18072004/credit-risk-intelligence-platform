@@ -291,10 +291,100 @@ def render_predict(applicants: pd.DataFrame) -> None:
             use_container_width=True, hide_index=True,
         )
 
+    _render_what_if(row, result)
+
     st.info(
         "See **Explain** for why this applicant scored as they did, and **Rules** for the "
         "policy the model applies across the whole book."
     )
+
+
+def _render_what_if(row: pd.DataFrame, baseline: Any) -> None:
+    """Let a user move one input and watch the score respond.
+
+    This is the question a credit officer actually asks on a marginal case --
+    "what would it take to approve this?" -- and it turns the model from
+    something that pronounces into something that can be interrogated. It also
+    makes the explanation testable: if SHAP says the external score dominates,
+    moving it should move the decision, and moving something trivial should not.
+    """
+    from src.ml.predict import predict_batch
+
+    with st.expander("What-if analysis", expanded=False):
+        st.caption(
+            "Adjust one or more inputs and rescore. Everything not shown here is held at "
+            "this applicant's actual values."
+        )
+        current = row.iloc[0]
+
+        columns = st.columns(3)
+        income = columns[0].number_input(
+            "Annual income", min_value=10_000.0, max_value=5_000_000.0,
+            value=float(current.get("AMT_INCOME_TOTAL") or 150_000), step=10_000.0,
+            key="whatif_income",
+        )
+        credit = columns[1].number_input(
+            "Loan amount", min_value=10_000.0, max_value=5_000_000.0,
+            value=float(current.get("AMT_CREDIT") or 500_000), step=10_000.0,
+            key="whatif_credit",
+        )
+        ext_current = current.get("EXT_SOURCE_MEAN")
+        if ext_current is None or pd.isna(ext_current):
+            scores = [current.get(f"EXT_SOURCE_{i}") for i in (1, 2, 3)]
+            usable = [float(v) for v in scores if v is not None and not pd.isna(v)]
+            ext_current = sum(usable) / len(usable) if usable else 0.5
+        external = columns[2].slider(
+            "External credit score (all three set to this)",
+            0.0, 1.0, float(ext_current), 0.01, key="whatif_ext",
+        )
+
+        arrears = st.checkbox(
+            "Has prior arrears on external credit",
+            value=bool(current.get("BUREAU_HAS_OVERDUE") or 0),
+            key="whatif_arrears",
+        )
+
+        if not st.button("Rescore with these values", key="whatif_go"):
+            return
+
+        modified = row.copy()
+        modified["AMT_INCOME_TOTAL"] = income
+        modified["AMT_CREDIT"] = credit
+        modified["AMT_GOODS_PRICE"] = credit * 0.9
+        for index in (1, 2, 3):
+            modified[f"EXT_SOURCE_{index}"] = external
+        modified["BUREAU_HAS_OVERDUE"] = int(arrears)
+
+        # explain=False: this is a comparison of scores, and skipping SHAP keeps
+        # the interaction responsive.
+        scenario = predict_batch(modified, explain=False)[0]
+
+        delta = scenario.probability - baseline.probability
+        columns = st.columns(3)
+        columns[0].metric(
+            "Default probability", f"{100 * scenario.probability:.1f}%",
+            delta=f"{100 * delta:+.1f} pts", delta_color="inverse",
+        )
+        columns[1].metric(
+            "Risk score", f"{scenario.risk_score:.0f}",
+            delta=f"{scenario.risk_score - baseline.risk_score:+.0f}", delta_color="inverse",
+        )
+        columns[2].metric("Band", scenario.risk_band)
+
+        if scenario.risk_band != baseline.risk_band:
+            st.success(
+                f"This change moves the applicant from **{baseline.risk_band}** to "
+                f"**{scenario.risk_band}** risk, and the recommendation from "
+                f"*{baseline.decision.lower()}* to *{scenario.decision.lower()}*."
+            )
+        else:
+            st.info(
+                f"The applicant stays in the **{scenario.risk_band}** band. The "
+                f"probability moves {100 * delta:+.1f} percentage points."
+            )
+        st.caption(
+            "Scenario scores are not written to the audit log \u2014 only real decisions are."
+        )
 
 
 def _render_value(value: Any) -> str:
@@ -633,13 +723,113 @@ def _render_answer(entry: dict[str, Any]) -> None:
         )
 
 
+# --------------------------------------------------------------------------- #
+# Section: Audit
+# --------------------------------------------------------------------------- #
+def render_audit() -> None:
+    """The append-only record of decisions and queries."""
+    from src.utils.audit import EVENT_PREDICTION, EVENT_QUERY, read_events, summarise
+
+    st.header("Audit trail")
+    st.markdown(
+        "Every credit decision and every question asked of the data is recorded to an "
+        "append-only log. A lending decision has to be reconstructable long after it was "
+        "made -- which model scored the applicant, what it returned, and **which reasons "
+        "were given** -- and every question becomes SQL against customer records, so what "
+        "ran is recoverable too."
+    )
+
+    stats = summarise()
+    columns = st.columns(4)
+    columns[0].metric("Decisions logged", f"{stats['predictions_logged']:,}")
+    columns[1].metric("Questions logged", f"{stats['queries_logged']:,}")
+    columns[2].metric(
+        "Refused / rejected",
+        f"{stats['queries_refused']:,} / {stats['queries_rejected']:,}",
+        help="Refused = the model declined to answer. Rejected = the validator or the "
+             "database blocked what it produced.",
+    )
+    last_event = stats["last_event"] or "none yet"
+    columns[3].metric("Last event", last_event[:19].replace("T", " "))
+
+    if not stats["predictions_logged"] and not stats["queries_logged"]:
+        st.info(
+            "Nothing logged yet. Score an applicant in **Predict** or ask a question in "
+            "**Chat**, then come back."
+        )
+        return
+
+    decisions_tab, queries_tab = st.tabs(["Credit decisions", "Data queries"])
+
+    with decisions_tab:
+        events = read_events(limit=200, event=EVENT_PREDICTION)
+        if not events:
+            st.info("No decisions recorded yet.")
+        else:
+            st.dataframe(
+                pd.DataFrame(
+                    [
+                        {
+                            "when": event["timestamp"][:19].replace("T", " "),
+                            "applicant": event.get("applicant_id"),
+                            "model": event.get("model"),
+                            "probability": f"{100 * event.get('probability_of_default', 0):.1f}%",
+                            "band": event.get("risk_band"),
+                            "decision": event.get("decision"),
+                            "top reason": (
+                                event["reasons"][0]["label"] if event.get("reasons") else "-"
+                            ),
+                        }
+                        for event in events
+                    ]
+                ),
+                use_container_width=True, hide_index=True,
+            )
+            with st.expander("Reasons recorded for the most recent decision"):
+                st.json(events[0].get("reasons", []))
+
+    with queries_tab:
+        events = read_events(limit=200, event=EVENT_QUERY)
+        if not events:
+            st.info("No questions recorded yet.")
+        else:
+            st.dataframe(
+                pd.DataFrame(
+                    [
+                        {
+                            "when": event["timestamp"][:19].replace("T", " "),
+                            "question": event.get("question"),
+                            "outcome": (
+                                "answered" if event.get("success")
+                                else ("refused" if event.get("refused") else "rejected")
+                            ),
+                            "rows": event.get("row_count"),
+                            "tables": ", ".join(event.get("tables") or []),
+                            "tokens": event.get("tokens"),
+                        }
+                        for event in events
+                    ]
+                ),
+                use_container_width=True, hide_index=True,
+            )
+            st.caption(
+                "Rejections and refusals are logged deliberately: a blocked query is a "
+                "security event, and a refusal is evidence the grounding controls worked."
+            )
+
+    st.caption(f"Log file: `{stats['path']}`")
+
+
+# --------------------------------------------------------------------------- #
+# Sidebar and entry point
+# --------------------------------------------------------------------------- #
 def render_sidebar() -> str:
     """Render the sidebar and return the selected section."""
     with st.sidebar:
         st.title("Credit Risk Intelligence")
         section = st.radio(
             "Section",
-            ["Overview", "Predict", "Explain", "Rules", "Chat"],
+            ["Overview", "Predict", "Explain", "Rules", "Chat", "Audit"],
             label_visibility="collapsed",
         )
 
@@ -705,6 +895,8 @@ def main() -> None:
         render_rules()
     elif section == "Chat":
         render_chat()
+    elif section == "Audit":
+        render_audit()
 
 
 main()

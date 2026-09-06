@@ -112,12 +112,38 @@ def categorize_features(frame: pd.DataFrame, target: str = "TARGET") -> dict[str
     return buckets
 
 
+# Business domains, described so the EDA can explain what each one covers.
+# The first five deliberately mirror the analysis areas the brief names --
+# demographics, financials, credit history, repayment behaviour and data
+# quality -- with repayment behaviour kept separate from credit history because
+# they answer different questions: one is what credit exists, the other is
+# whether it was paid on time. The distinction matters for policy, since
+# behavioural evidence is far more defensible as a decline reason than
+# demographic evidence.
+DOMAIN_DESCRIPTIONS: dict[str, str] = {
+    "demographics": "Who the applicant is: age, gender, family, housing, occupation, region.",
+    "financials": "Income, loan amount, instalment, and the affordability ratios derived from them.",
+    "credit_history": "What external credit exists: how many prior credits, how much, how long.",
+    "repayment_behaviour": "How prior credit was repaid: arrears, days past due, overdue amounts, prolongations.",
+    "external_scores": "Third-party credit scores, the strongest single predictor in the dataset.",
+    "property": "Building and dwelling attributes; largely optional and heavily missing.",
+    "documents": "Which supporting documents the applicant submitted.",
+    "application_process": "How and when the application itself was made.",
+    "identifier": "Keys used for joining; never used as model features.",
+    "other": "Everything not otherwise classified.",
+}
+
+# Repayment-behaviour markers. Matched as substrings because the concept spans
+# the raw bureau columns and the aggregates derived from them.
+_REPAYMENT_MARKERS: tuple[str, ...] = (
+    "OVERDUE", "DPD", "PROLONG", "DEF_30", "DEF_60",
+)
+
+
 def domain_of(column: str) -> str:
     """Map a raw column name to a business domain, for EDA grouping.
 
-    Returns one of: ``demographics``, ``financials``, ``credit_history``,
-    ``external_scores``, ``property``, ``documents``, ``application_process``,
-    ``identifier`` or ``other``.
+    Returns one of the keys of :data:`DOMAIN_DESCRIPTIONS`.
     """
     if column.startswith("SK_ID"):
         return "identifier"
@@ -125,9 +151,13 @@ def domain_of(column: str) -> str:
         return "external_scores"
     if column.startswith("FLAG_DOCUMENT"):
         return "documents"
+    # Checked before credit_history: a bureau column about arrears is
+    # repayment behaviour, not merely the existence of a credit line.
+    if any(marker in column for marker in _REPAYMENT_MARKERS):
+        return "repayment_behaviour"
     if column.startswith(("BUREAU_", "AMT_REQ_CREDIT_BUREAU")):
         return "credit_history"
-    if column.startswith("AMT_") or column in {"CNT_CREDIT_PROLONG"}:
+    if column.startswith("AMT_"):
         return "financials"
     if column.startswith(("CODE_GENDER", "CNT_CHILDREN", "CNT_FAM_MEMBERS", "DAYS_BIRTH",
                           "NAME_FAMILY_STATUS", "NAME_EDUCATION_TYPE", "NAME_HOUSING_TYPE",

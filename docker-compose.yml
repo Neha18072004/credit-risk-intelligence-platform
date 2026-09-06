@@ -55,7 +55,7 @@ services:
     ports:
       - "${OLLAMA_PORT_HOST:-11434}:11434"
     environment:
-      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-10m}
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-60m}
     healthcheck:
       # `ollama list` succeeds only once the server is actually accepting
       # requests, which is what the model pull and the app both need.
@@ -133,7 +133,7 @@ services:
       LLM_MODEL: ${LLM_MODEL:-qwen2.5-coder:7b}
       OLLAMA_BASE_URL: http://ollama:11434
       OLLAMA_FALLBACK_MODEL: ${OLLAMA_FALLBACK_MODEL:-llama3.1:8b}
-      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-10m}
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-60m}
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-120}
       LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.0}
       # --- optional hosted overrides; blank is fine and expected ---

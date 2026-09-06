@@ -248,6 +248,7 @@ def cross_validate_candidate(
     labels: pd.Series,
     preprocessor: CreditPreprocessor,
     scale_pos_weight: float,
+    params: dict[str, Any] | None = None,
 ) -> CandidateResult:
     """Run stratified k-fold CV for one candidate and collect OOF predictions.
 
@@ -281,7 +282,7 @@ def cross_validate_candidate(
         X_valid = prepared.iloc[valid_idx]
         y_train = labels.iloc[train_idx]
 
-        model = _instantiate(name, preprocessor, scale_pos_weight)
+        model = _instantiate(name, preprocessor, scale_pos_weight, params)
         rounds = _fit_with_early_stopping(model, name, X_train, y_train)
         if rounds:
             best_iterations.append(rounds)
@@ -315,6 +316,107 @@ def cross_validate_candidate(
         result.best_iteration, elapsed,
     )
     return result
+
+
+# --------------------------------------------------------------------------- #
+# Hyperparameter search
+# --------------------------------------------------------------------------- #
+# Search spaces, deliberately narrow. On a few thousand rows with ~350 defaults
+# a wide search overfits the validation split faster than it finds a better
+# model, so each space brackets the sensible region for tabular credit data
+# rather than exploring exhaustively.
+SEARCH_SPACES: Final[dict[str, dict[str, list[Any]]]] = {
+    "logistic": {
+        "model__C": [0.01, 0.03, 0.1, 0.3, 1.0],
+    },
+    "lightgbm": {
+        "learning_rate": [0.02, 0.05, 0.1],
+        "num_leaves": [8, 16, 24, 31],
+        "min_child_samples": [20, 40, 80],
+        "colsample_bytree": [0.6, 0.75, 0.9],
+        "subsample": [0.7, 0.85, 1.0],
+        "reg_lambda": [0.1, 1.0, 5.0],
+    },
+    "catboost": {
+        "learning_rate": [0.02, 0.05, 0.1],
+        "depth": [3, 4, 5, 6],
+        "l2_leaf_reg": [1.0, 3.0, 9.0],
+    },
+}
+
+
+def tune_candidate(
+    name: str,
+    features: pd.DataFrame,
+    labels: pd.Series,
+    preprocessor: CreditPreprocessor,
+    scale_pos_weight: float,
+    n_iter: int | None = None,
+) -> dict[str, Any]:
+    """Randomised hyperparameter search for one candidate.
+
+    Scored on **average precision**, the same metric the bake-off selects on --
+    tuning for one objective and selecting on another is how a search produces a
+    model that looks better and performs worse.
+
+    Randomised rather than exhaustive: with six parameters a grid runs into the
+    hundreds of fits for a search space whose differences are mostly inside the
+    noise of a five-fold estimate on this many defaults. A capped random sample
+    finds most of the available gain for a fraction of the compute, and the cap
+    is configurable so the same code is usable on the full 307k-row dataset.
+
+    Args:
+        name: Candidate name.
+        features: Model-ready features.
+        labels: Binary target.
+        preprocessor: Fitted preprocessor, for its column metadata.
+        scale_pos_weight: Class-imbalance weight.
+        n_iter: Parameter settings sampled; defaults to ``settings.tuning_iterations``.
+
+    Returns:
+        ``{"best_params": ..., "best_score": ..., "n_candidates": ...}``.
+    """
+    from sklearn.model_selection import RandomizedSearchCV
+
+    space = SEARCH_SPACES.get(name, {})
+    if not space:
+        return {"best_params": {}, "best_score": None, "n_candidates": 0}
+
+    prepared = _prepare_for_model(features, name, preprocessor.categorical_features_)
+    estimator = _instantiate(name, preprocessor, scale_pos_weight)
+
+    # Cap the sample at the size of the space: asking for more settings than
+    # exist makes scikit-learn warn on every run, and for a one-parameter space
+    # the "random" search is simply exhaustive.
+    space_size = 1
+    for values in space.values():
+        space_size *= len(values)
+    iterations = min(n_iter or settings.tuning_iterations, space_size)
+
+    search = RandomizedSearchCV(
+        estimator=estimator,
+        param_distributions=space,
+        n_iter=iterations,
+        scoring="average_precision",
+        cv=StratifiedKFold(
+            n_splits=3, shuffle=True, random_state=settings.random_seed
+        ),  # 3 folds inside the search; the outer 5-fold still judges the result
+        random_state=settings.random_seed,
+        n_jobs=1 if name == "catboost" else -1,  # CatBoost parallelises internally
+        refit=False,
+        error_score="raise",
+    )
+    started = time.perf_counter()
+    search.fit(prepared, labels)
+    logger.info(
+        "%-9s tuned in %.1fs: PR-AUC %.4f with %s",
+        name, time.perf_counter() - started, search.best_score_, search.best_params_,
+    )
+    return {
+        "best_params": dict(search.best_params_),
+        "best_score": float(search.best_score_),
+        "n_candidates": int(len(search.cv_results_["params"])),
+    }
 
 
 def _fit_with_early_stopping(
@@ -391,17 +493,34 @@ _CANDIDATE_NOTES: Final[dict[str, str]] = {
 }
 
 
-def _instantiate(name: str, preprocessor: CreditPreprocessor, scale_pos_weight: float) -> Any:
-    """Build a fresh, unfitted candidate by name."""
+def _instantiate(
+    name: str,
+    preprocessor: CreditPreprocessor,
+    scale_pos_weight: float,
+    params: dict[str, Any] | None = None,
+) -> Any:
+    """Build a fresh, unfitted candidate by name, optionally tuned.
+
+    Args:
+        name: Candidate name.
+        preprocessor: Fitted preprocessor, for its column metadata.
+        scale_pos_weight: Class-imbalance weight.
+        params: Hyperparameters from the search, applied over the defaults.
+    """
     if name == "logistic":
-        return build_logistic_pipeline(
+        model = build_logistic_pipeline(
             preprocessor.numeric_features_, preprocessor.categorical_features_
         )
-    if name == "lightgbm":
-        return build_lightgbm(scale_pos_weight)
-    if name == "catboost":
-        return build_catboost(scale_pos_weight, preprocessor.categorical_features_)
-    raise ValueError(f"Unknown candidate {name!r}")
+    elif name == "lightgbm":
+        model = build_lightgbm(scale_pos_weight)
+    elif name == "catboost":
+        model = build_catboost(scale_pos_weight, preprocessor.categorical_features_)
+    else:
+        raise ValueError(f"Unknown candidate {name!r}")
+
+    if params:
+        model.set_params(**params)
+    return model
 
 
 # --------------------------------------------------------------------------- #
@@ -616,7 +735,11 @@ def _set_n_estimators(model: Any, name: str, rounds: int) -> None:
         model.set_params(iterations=rounds)
 
 
-def train(save: bool = True, candidates: list[str] | None = None) -> dict[str, Any]:
+def train(
+    save: bool = True,
+    candidates: list[str] | None = None,
+    tune: bool | None = None,
+) -> dict[str, Any]:
     """Run the full training pipeline and persist every artifact.
 
     Steps: load and join, fit the preprocessor, cross-validate all candidates,
@@ -626,6 +749,10 @@ def train(save: bool = True, candidates: list[str] | None = None) -> dict[str, A
     Args:
         save: Write artifacts to ``models/``. Set False in tests.
         candidates: Restrict the bake-off; defaults to all three.
+        tune: Run a randomised hyperparameter search before the bake-off.
+            Defaults to ``settings.tune_hyperparameters``. Every candidate is
+            tuned, not just the expected winner -- tuning one model and
+            comparing it against another's defaults is not a comparison.
 
     Returns:
         A summary dictionary containing the comparison table, the selected
@@ -651,9 +778,25 @@ def train(save: bool = True, candidates: list[str] | None = None) -> dict[str, A
         100 * labels.mean(), scale_pos_weight,
     )
 
+    # --- optional hyperparameter search -----------------------------------
+    should_tune = settings.tune_hyperparameters if tune is None else tune
+    tuning: dict[str, dict[str, Any]] = {}
+    if should_tune:
+        logger.info(
+            "Tuning %d candidates (%d settings each, scored on average precision)",
+            len(names), settings.tuning_iterations,
+        )
+        for name in names:
+            tuning[name] = tune_candidate(
+                name, features, labels, preprocessor, scale_pos_weight
+            )
+
     # --- bake-off ---------------------------------------------------------
     results = [
-        cross_validate_candidate(name, features, labels, preprocessor, scale_pos_weight)
+        cross_validate_candidate(
+            name, features, labels, preprocessor, scale_pos_weight,
+            params=tuning.get(name, {}).get("best_params"),
+        )
         for name in names
     ]
     comparison = pd.DataFrame([r.to_row() for r in results]).sort_values(
@@ -662,7 +805,10 @@ def train(save: bool = True, candidates: list[str] | None = None) -> dict[str, A
     winner = select_winner(results)
 
     # --- final fit, calibration, thresholds -------------------------------
-    final_model = _instantiate(winner.name, preprocessor, scale_pos_weight)
+    final_model = _instantiate(
+        winner.name, preprocessor, scale_pos_weight,
+        params=tuning.get(winner.name, {}).get("best_params"),
+    )
     if winner.best_iteration:
         # Refit on all the data for the number of rounds cross-validation showed
         # to be optimal, rather than holding data back for a stopping set.
@@ -700,6 +846,12 @@ def train(save: bool = True, candidates: list[str] | None = None) -> dict[str, A
         },
         "bakeoff": comparison.to_dict(orient="records"),
         "thresholds": thresholds,
+        "tuning": {
+            "enabled": should_tune,
+            "iterations_per_model": settings.tuning_iterations if should_tune else 0,
+            "scoring": "average_precision",
+            "results": tuning,
+        },
     }
 
     metadata = {
@@ -740,7 +892,20 @@ def train(save: bool = True, candidates: list[str] | None = None) -> dict[str, A
 
 def main() -> dict[str, Any]:  # pragma: no cover - CLI entry point
     """Command-line entry point: run the bake-off and print the results."""
-    outcome = train()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Train the credit-risk model.")
+    parser.add_argument(
+        "--tune", action="store_true",
+        help="Run a randomised hyperparameter search before the bake-off (slower).",
+    )
+    parser.add_argument(
+        "--no-tune", action="store_true", help="Skip tuning even if TUNE_HYPERPARAMETERS is set.",
+    )
+    arguments = parser.parse_args()
+    tune = True if arguments.tune else (False if arguments.no_tune else None)
+
+    outcome = train(tune=tune)
     comparison = outcome["comparison"]
     metrics = outcome["metrics"]
 
@@ -753,6 +918,14 @@ def main() -> dict[str, Any]:  # pragma: no cover - CLI entry point
              "log_loss", "fit_seconds", "supports_shap"]
         ].to_string(index=False)
     )
+    tuning = metrics.get("tuning", {})
+    if tuning.get("enabled"):
+        print(f"\n  Hyperparameters tuned ({tuning['iterations_per_model']} settings per model, "
+              f"scored on {tuning['scoring']}):")
+        for name, result in tuning["results"].items():
+            if result.get("best_params"):
+                print(f"    - {name:9s} PR-AUC {result['best_score']:.4f}  {result['best_params']}")
+
     print(f"\n  Selected: {outcome['winner']}  ({metrics['selection_criterion']})")
     for result in comparison.itertuples():
         print(f"    - {result.name:9s} {result.notes}")

@@ -229,12 +229,18 @@ def predict_batch(
     return results
 
 
-def predict_applicant(row: pd.DataFrame | pd.Series, top_n: int = 10) -> PredictionResult:
+def predict_applicant(
+    row: pd.DataFrame | pd.Series, top_n: int = 10, audit: bool = True
+) -> PredictionResult:
     """Score one applicant, always with an explanation.
 
     Args:
         row: A single applicant as a one-row frame or a Series.
         top_n: Number of SHAP contributions to return.
+        audit: Record the decision and its reasons to the audit log. On by
+            default: an individual credit decision is exactly what has to be
+            reconstructable later. Batch scoring does not audit per row, since
+            a bulk run is a different kind of event.
 
     Returns:
         The scored result including its explanation.
@@ -242,7 +248,24 @@ def predict_applicant(row: pd.DataFrame | pd.Series, top_n: int = 10) -> Predict
     frame = row.to_frame().T if isinstance(row, pd.Series) else row
     if len(frame) != 1:
         raise ValueError(f"predict_applicant expects one row, got {len(frame)}")
-    return predict_batch(frame, explain=True, top_n=top_n)[0]
+
+    result = predict_batch(frame, explain=True, top_n=top_n)[0]
+
+    if audit:
+        from src.utils.audit import record_prediction
+
+        payload = result.to_dict()
+        record_prediction(
+            applicant_id=result.applicant_id,
+            probability=result.probability,
+            risk_score=result.risk_score,
+            risk_band=result.risk_band,
+            decision=result.decision,
+            model_name=load_bundle().model_name,
+            threshold=result.threshold,
+            reasons=payload["top_contributions"],
+        )
+    return result
 
 
 def score_frame(frame: pd.DataFrame) -> pd.DataFrame:

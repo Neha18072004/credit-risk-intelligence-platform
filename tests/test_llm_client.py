@@ -160,3 +160,26 @@ def test_ollama_distinguishes_downloading_from_unreachable() -> None:
         available, message = client.is_available()
         assert not available
         assert "Cannot reach" in message
+
+
+def test_warm_up_loads_the_model() -> None:
+    """The first question should not pay the model-load cost."""
+    client = OllamaClient()
+    with patch.object(client, "resolve_model", return_value="m"), patch.object(
+        client, "_request", return_value={"message": {"content": "ok"}}
+    ) as request:
+        assert client.warm_up() is True
+        payload = request.call_args[0][1]
+        assert payload["model"] == "m"
+        # One token is enough to force the load without generating anything.
+        assert payload["options"]["num_predict"] == 1
+        assert payload["keep_alive"]
+
+
+def test_warm_up_failure_is_not_an_error() -> None:
+    """On first start the model is still downloading; that must not break boot."""
+    client = OllamaClient()
+    with patch.object(client, "resolve_model", return_value="m"), patch.object(
+        client, "_request", side_effect=urllib.error.URLError("not ready")
+    ):
+        assert client.warm_up() is False

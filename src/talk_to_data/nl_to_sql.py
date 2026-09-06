@@ -23,7 +23,9 @@ The flow, and what each step defends against:
    ``ROUND(double precision, int)`` is the case that motivated this -- and the
    error text names the fix precisely enough for the model to apply it.
 8. **Summarisation** strictly from the returned rows.
-9. **Recording** the turn into memory, successes and failures alike.
+9. **Recording** the turn into memory and into the audit log, successes and
+   failures alike -- a rejected query is a security event and a refusal is
+   evidence the grounding controls did their job.
 """
 
 from __future__ import annotations
@@ -184,6 +186,7 @@ class TalkToData:
             result.error = reason
             result.elapsed_seconds = time.perf_counter() - started
             self.memory.record(question, succeeded=False, error=reason)
+            self._audit(result)
             return result
 
         feedback = ""
@@ -195,6 +198,7 @@ class TalkToData:
                 result.error = str(error)
                 result.elapsed_seconds = time.perf_counter() - started
                 self.memory.record(question, succeeded=False, error=result.error)
+                self._audit(result)
                 return result
 
             result.prompt_tokens += prompt_tokens
@@ -211,6 +215,7 @@ class TalkToData:
                 )
                 result.elapsed_seconds = time.perf_counter() - started
                 self.memory.record(question, succeeded=False, error=refusal)
+                self._audit(result)
                 return result
 
             validation = self.validator.validate(raw)
@@ -239,6 +244,7 @@ class TalkToData:
             result.error = f"Could not produce a working query. {last_reason}"
             result.elapsed_seconds = time.perf_counter() - started
             self.memory.record(question, succeeded=False, error=result.error)
+            self._audit(result)
             return result
 
         if summarise:
@@ -251,12 +257,32 @@ class TalkToData:
             question, sql=result.sql, row_count=result.row_count,
             answer=result.answer, succeeded=True,
         )
+        self._audit(result)
         logger.info(
             "Answered in %.2fs using %d tokens (%d rows)",
             result.elapsed_seconds, result.prompt_tokens + result.completion_tokens,
             result.row_count,
         )
         return result
+
+    @staticmethod
+    def _audit(result: AskResult) -> None:
+        """Record one turn to the audit log, whatever its outcome."""
+        from src.utils.audit import record_query
+
+        record_query(
+            question=result.question,
+            sql=result.sql,
+            success=result.success,
+            row_count=result.row_count,
+            error=result.error,
+            refused=result.refused,
+            tables=result.tables_used,
+            elapsed_seconds=result.elapsed_seconds,
+            tokens=result.prompt_tokens + result.completion_tokens,
+            summary_source=result.summary_source,
+            prompt_version=result.prompt_version,
+        )
 
     def reset(self) -> None:
         """Clear the conversation history."""

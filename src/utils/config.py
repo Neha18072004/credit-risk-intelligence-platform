@@ -107,7 +107,7 @@ class Settings(BaseSettings):
     # --- local runtime (default; no credential required) ---
     ollama_base_url: str = "http://ollama:11434"
     ollama_fallback_model: str = "llama3.1:8b"
-    ollama_keep_alive: str = "10m"
+    ollama_keep_alive: str = "60m"
 
     # --- optional hosted overrides ---
     openai_api_key: str = ""
@@ -128,6 +128,11 @@ class Settings(BaseSettings):
     risk_band_low_max: float = Field(default=0.05, gt=0.0, lt=1.0)
     risk_band_medium_max: float = Field(default=0.15, gt=0.0, lt=1.0)
     surrogate_tree_max_depth: int = Field(default=4, ge=2, le=6)
+
+    # Hyperparameter search. Off by default so the documented quick-start stays
+    # quick; the bake-off runs in seconds without it and minutes with it.
+    tune_hyperparameters: bool = False
+    tuning_iterations: int = Field(default=20, ge=1)
 
     # ---------------------------------------------------------- streamlit ---
     streamlit_server_port: int = 8501

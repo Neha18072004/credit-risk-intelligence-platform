@@ -195,6 +195,37 @@ class OllamaClient(LLMClient):
             "OLLAMA_BASE_URL=http://localhost:11434."
         )
 
+    def warm_up(self) -> bool:
+        """Load the model into memory ahead of the first real question.
+
+        Ollama loads a model lazily, so the first request pays the full load
+        cost -- measured at ~70 seconds for a 7B model against ~15 for the
+        requests after it. That first request is almost always the one someone
+        is watching, so the load is triggered at start-up instead, with
+        ``keep_alive`` holding the model resident afterwards.
+
+        Returns:
+            True if the model responded. Failure is not an error: the app is
+            perfectly usable while the model is still downloading.
+        """
+        try:
+            self._request(
+                "/api/chat",
+                {
+                    "model": self.resolve_model(),
+                    "messages": [{"role": "user", "content": "ok"}],
+                    "stream": False,
+                    "keep_alive": settings.ollama_keep_alive,
+                    "options": {"num_predict": 1},
+                },
+                settings.llm_timeout_seconds,
+            )
+            logger.info("Local model %s warmed up and resident", self.resolve_model())
+            return True
+        except (urllib.error.URLError, urllib.error.HTTPError, OSError, TimeoutError) as error:
+            logger.info("Model warm-up skipped (%s); it will load on first use", error)
+            return False
+
     def complete(self, system_prompt: str, user_prompt: str) -> LLMResponse:
         model = self.resolve_model()
         payload = {

@@ -36,7 +36,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ ./src/
 COPY sql/ ./sql/
 COPY notebooks/ ./notebooks/
-COPY docker/entrypoint.sh ./docker/entrypoint.sh
+COPY docker/ ./docker/
 COPY data/sample/ ./data/sample/
 
 # Writable output directories. Created explicitly so they exist even when no

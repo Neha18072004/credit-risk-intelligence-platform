@@ -77,7 +77,19 @@ if ! python -m src.data.db_loader; then
 fi
 
 # ---------------------------------------------------------------------------
-# 6. Serve.
+# 6. Warm the language model in the background.
+#
+# Ollama loads a model lazily, so the first question would otherwise pay a
+# ~70 second load. Backgrounded because the app must not wait on it: on first
+# start the model is still downloading and the warm-up simply no-ops.
+# ---------------------------------------------------------------------------
+if [ "${LLM_PROVIDER:-ollama}" = "ollama" ]; then
+    log "Warming the local model in the background"
+    python -m docker.warmup >/dev/null 2>&1 &
+fi
+
+# ---------------------------------------------------------------------------
+# 7. Serve.
 # ---------------------------------------------------------------------------
 log "Starting Streamlit on port ${STREAMLIT_SERVER_PORT:-8501}"
 exec streamlit run src/ui/app.py \

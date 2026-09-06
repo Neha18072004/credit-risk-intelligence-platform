@@ -34,7 +34,13 @@ matplotlib.use("Agg")  # figures are written to disk, never displayed interactiv
 from src.data.loader import BUREAU_PREFIX, build_dataset, dataset_summary
 from src.data.preprocessor import DAYS_EMPLOYED_ANOMALY, clean_applications, engineer_features
 from src.utils.config import settings
-from src.utils.helpers import categorize_features, domain_of, missing_value_report, write_json
+from src.utils.helpers import (
+    DOMAIN_DESCRIPTIONS,
+    categorize_features,
+    domain_of,
+    missing_value_report,
+    write_json,
+)
 from src.utils.logger import get_logger
 from src.utils.viz import (
     INK_MUTED,
@@ -151,6 +157,7 @@ def feature_catalog(frame: pd.DataFrame) -> pd.DataFrame:
             "column": column,
             "type_bucket": type_of.get(column, "target" if column == TARGET else "other"),
             "domain": domain_of(column),
+            "domain_covers": DOMAIN_DESCRIPTIONS.get(domain_of(column), ""),
             "pct_missing": float(missing.loc[column, "pct_missing"]),
             "n_unique": int(missing.loc[column, "n_unique"]),
         }
@@ -525,6 +532,16 @@ def insight_feature_landscape(frame: pd.DataFrame, save: bool = True) -> Insight
         x=0.02, ha="left", fontsize=12, fontweight="600",
     )
     fig.tight_layout()
+
+    # Record what each domain covers, so "feature categorization" is a stated
+    # grouping rather than a bare column count.
+    domain_table = (
+        catalog.groupby("domain")
+        .agg(columns=("column", "count"), covers=("domain_covers", "first"))
+        .sort_values("columns", ascending=False)
+        .reset_index()
+    )
+    logger.info("Domains: %s", dict(zip(domain_table["domain"], domain_table["columns"])))
 
     takeaway = (
         f"The {len(catalog)} columns split into {int(by_type.get('numeric', 0))} numeric, "
