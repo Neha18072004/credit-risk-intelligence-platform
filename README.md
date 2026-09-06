@@ -4,6 +4,10 @@ An end-to-end, explainable credit-risk platform built on the **Home Credit Defau
 Risk** dataset: exploratory analysis, a calibrated risk model, SHAP explanations,
 machine-derived credit policy, and a guarded natural-language interface to the data.
 
+Trained and evaluated on the **full 307,511-row Home Credit dataset**, using four
+of its seven tables. Selected model: LightGBM, **ROC-AUC 0.782**, PR-AUC 0.268
+(3.3x the no-skill baseline), calibrated to a Brier score of 0.066.
+
 **One command runs all of it, with no API key:**
 
 ```bash
@@ -203,16 +207,24 @@ bars. Where intervals overlap, the written takeaway says so instead of asserting
 a difference — the education spread, for instance, self-reports as directional
 only because its worst band holds just 50 applicants.
 
-Selected findings on the sample data:
+Findings on the **real 307,511-row dataset** (9 insights; 6 shown):
 
 | Insight | Finding |
 |---|---|
-| External scores dominate | Default rate falls **17.5% → 1.9%** across score quintiles, monotonically |
-| Affordability beats loan size | Rate climbs **5.9% → 14.2%** across loan-to-income quintiles |
-| Prior arrears is the sharpest lever | **15.4%** with arrears vs **7.6%** without — 2.1×, non-overlapping intervals |
-| The employment anomaly is a population | 18% carry the 365243 sentinel; they are pensioners, and they default *less* |
-| Tenure barely matters | Given an employment record, tenure length moves the rate very little |
-| Thin files are their own state | Applicants with no bureau record sit at 8.1% and keep their NULLs |
+| External scores dominate | Default rate falls **18.7% → 2.5%** across score quintiles, monotonically |
+| **Loan size does *not* separate risk** | Loan-to-income is an inverted U — **7.3% at both extremes**, peaking at 8.9% in the middle. The *instalment* ratio does rise monotonically (7.2% → 8.7%) |
+| Prior repayment behaviour | Applicants who ever paid one of our instalments late default at **9.4%** vs 6.8% |
+| Prior arrears elsewhere | **15.9%** with bureau arrears vs 7.6% without — 2.1×, non-overlapping intervals |
+| The employment anomaly is a population | 18% carry the 365243 sentinel; they are pensioners, and they default *less* (5.4% vs 8.7%) |
+| Education spreads risk | **1.8%** (Academic degree) to **10.9%** (Lower secondary) |
+
+The loan-to-income finding is the one worth dwelling on, because it contradicts
+the obvious assumption. The most heavily leveraged applicants are **not** the
+riskiest — most likely because very high loan-to-income ratios pick up secured
+and longer-term products rather than distressed borrowing. An earlier version of
+this README asserted the opposite, because the insight's takeaway was written by
+hand. It now derives its claim from the data by rank correlation, and reaches
+opposite conclusions on the real and synthetic datasets — correctly in both cases.
 
 ---
 
@@ -226,34 +238,39 @@ family: the trees consume NaN and categoricals natively, while the linear
 baseline gets median imputation, one-hot encoding and standardisation **inside
 its own pipeline, refitted on every fold** so nothing leaks across the split.
 
+Five-fold, out-of-fold, on all 307,511 rows and 198 engineered features:
+
 | Model | PR-AUC | ± s.e. | ROC-AUC | Brier | Fit (s) | Exact tree SHAP |
 |---|---|---|---|---|---|---|
-| Logistic regression | **0.3343** | 0.0117 | 0.8026 | 0.1533 | 0.8 | No |
-| **CatBoost (selected)** | 0.3159 | 0.0205 | 0.7938 | 0.1372 | 3.9 | Yes |
-| LightGBM | 0.2877 | 0.0076 | 0.7984 | 0.0859 | 2.6 | Yes |
+| **LightGBM (selected)** | **0.2720** | 0.0033 | 0.7811 | 0.1711 | 34 | Yes |
+| CatBoost | 0.2705 | 0.0039 | 0.7809 | 0.1801 | 212 | Yes |
+| Logistic regression | 0.2480 | 0.0026 | 0.7666 | 0.1961 | 39 | No |
 
-### Why CatBoost, when logistic scored higher
+Hyperparameters come from a randomised search over 12 settings per model, scored
+on average precision — the same metric the bake-off selects on, because tuning
+for one objective and selecting on another yields a model that looks better and
+performs worse. All three were tuned; tuning one and comparing it against
+another's defaults is not a comparison. The searched values are baked in as the
+defaults, so the shipped model is the tuned one and `--tune` reproduces it.
 
-Because **the difference is inside the noise, and the tie-break is explainability.**
+### Why LightGBM
 
-With a few hundred defaults, fold-to-fold PR-AUC varies widely. Logistic's
-0.018 lead over CatBoost is *smaller than CatBoost's own standard error*
-(0.0205), so on this sample the two are statistically indistinguishable.
-`select_winner()` encodes exactly that rule: any candidate within one standard
-error of the leader is treated as tied, and the tie is decided on the brief's
-secondary criteria — exact tree SHAP first, then fit cost.
+LightGBM and CatBoost are **statistically tied**: 0.2720 against 0.2705, a gap
+of 0.0015 against standard errors of 0.0033 and 0.0039. `select_winner()`
+encodes that explicitly — any candidate within one standard error of the leader
+is treated as tied, and the tie is decided on the brief's secondary criteria:
+exact tree SHAP support first, then fit cost. Both support SHAP, so it came down
+to cost, and LightGBM delivers the same performance in **a sixth of the training
+time** (34s against 212s).
 
-Shipping a marginally higher point estimate at the cost of per-applicant
-explanations is the wrong trade for a model that has to justify every decision
-to an applicant and a regulator.
+Logistic regression is genuinely behind here (0.2480), and that is worth
+recording because **it was not true on the synthetic fixture**. There, a largely
+linear data-generating process flattered the linear model into first place. On
+real data the boosted models win by 0.024 PR-AUC — a gap roughly seven standard
+errors wide. The selection logic did not change; the data did.
 
-Two honest caveats:
-
-* **This is a 4,000-row synthetic fixture.** On the real 307,511-row dataset the
-  gradient-boosted models win decisively and the gap is not close. The selection
-  *logic* is what matters here, and it is data-driven either way.
-* **The bake-off was wrong twice before it was right**, and both bugs are worth
-  recording:
+**The bake-off was wrong twice before it was right**, and both bugs are worth
+recording:
   1. LightGBM was silently stopping at **iteration 5**. LightGBM tracks its
      objective's default metric alongside the requested one and halts when *any*
      of them stalls; under `scale_pos_weight` the unweighted logloss degrades
@@ -262,7 +279,30 @@ Two honest caveats:
   2. The fixture's data-generating process was **linear in the logit**, making
      logistic regression the correctly specified model by construction. Adding
      the non-linearities real credit data has (leverage compounding with a weak
-     score, a scorecard cliff, U-shaped age risk) made the comparison meaningful.
+     score, a scorecard cliff, U-shaped age risk) made the comparison meaningful
+     — and the real data then confirmed the direction.
+
+### Which tables earn their place
+
+Four of the seven Kaggle tables are used. That is a measured decision, not a
+guess: `src/ml/ablation.py` switches each block on in turn and reports the gain.
+
+| Configuration | Features | PR-AUC | ROC-AUC | Marginal gain |
+|---|---|---|---|---|
+| `application` only | 139 | 0.2507 | 0.7660 | — |
+| `+ bureau` | 166 | 0.2576 | 0.7697 | **+0.0069** |
+| `+ previous_application` | 183 | 0.2638 | 0.7747 | **+0.0062** |
+| `+ installments_payments` | 198 | 0.2708 | 0.7800 | **+0.0070** |
+
+Each block contributes roughly equally, so all three stay. `bureau_balance`,
+`POS_CASH_balance` and `credit_card_balance` are excluded: each is a monthly
+panel largely redundant with these aggregates, and each costs real runtime.
+Nothing is included merely because it exists.
+
+`installments_payments` matters beyond its AUC contribution. It is the table
+that actually contains **repayment behaviour** — payment date against due date,
+amount paid against amount owed — which the brief names as an analysis area and
+which no other table captures.
 
 ### Class imbalance: weighting, not SMOTE
 
@@ -285,8 +325,8 @@ calibrator fitted on out-of-fold predictions corrects that:
 
 | | Brier | Mean predicted | Observed |
 |---|---|---|---|
-| Before | 0.1372 | — | 0.0853 |
-| **After** | **0.0670** | **0.0853** | 0.0853 |
+| Before | 0.1711 | — | 0.0807 |
+| **After** | **0.0663** | **0.0807** | 0.0807 |
 
 **Caveat, stated on the chart itself:** the calibrator was fitted on the same
 out-of-fold predictions the reliability curve is drawn from, so that curve is
@@ -298,22 +338,27 @@ data. The ranking metrics are genuinely out-of-fold; the calibration fit is not.
 At an 8.5% base rate a 0.5 cut-off approves nearly everyone. Both the decision
 point and the band edges are tuned on out-of-fold predictions.
 
-| | Tuned (0.239) | Naive (0.5) |
+| | Tuned (0.165) | Naive (0.5) |
 |---|---|---|
-| Precision | 0.361 | 0.628 |
-| Recall | 0.328 | 0.094 |
-| **Defaults caught** | **112** | 32 |
-| Defaults missed | 229 | 309 |
+| Precision | 0.267 | 0.604 |
+| Recall | 0.430 | 0.029 |
+| Share of book flagged | 13.0% | 0.4% |
+| **Defaults caught** | **10,665** | 713 |
+| Defaults missed | 14,160 | 24,112 |
 
-The tuned threshold catches **3.5× more defaults**.
+The tuned threshold catches **15× more defaults**. The naive cut-off looks more
+precise only because it flags almost nobody — it finds 3% of the defaults in the
+book, which is not a usable credit policy.
 
 Bands are defined so the *marginal* applicant is bounded, not the group average:
 
-| Band | Definition | Population | Realised default rate |
-|---|---|---|---|
-| **Low** | ≤ portfolio base rate (0.085) | 58.3% | **2.6%** |
-| **Medium** | ≤ decision threshold (0.239) | 33.9% | 12.5% |
-| **High** | above it → refer for review | 7.8% | **36.1%** |
+| Band | Definition | Population | Realised default rate | Share of all defaults |
+|---|---|---|---|---|
+| **Low** | ≤ portfolio base rate (0.081) | 66.3% | **3.34%** | 27% |
+| **Medium** | ≤ decision threshold (0.165) | 21.0% | 11.65% | 30% |
+| **High** | above it → refer for review | 12.6% | **26.96%** | **42%** |
+
+The High band is an eighth of the book and contains two-fifths of the defaults.
 
 An earlier version set the Low edge wherever the *average* rate below it met a
 5% target. Reading the generated policy rules exposed the flaw: a rule
@@ -330,11 +375,11 @@ Two explanations for two audiences, from one pipeline.
 diverging chart, a ranked table, and — the part that matters for a decision
 someone has to justify — a plain-English paragraph:
 
-> This applicant has a 99.9% estimated probability of default, placing them in
+> This applicant has a 87.5% estimated probability of default, placing them in
 > the **High** risk band. Recommended action: refer for review. The main factors
-> increasing risk are that their average external credit score of 0.309 raises
-> the risk, their combined external credit score of 0.000103 raises the risk,
-> and their instalment-to-income ratio of 37% raises the risk.
+> increasing risk are that their average external credit score of 0.171 raises
+> the risk, their combined external credit score of 3.25e-05 raises the risk,
+> and their share of instalments paid late of 48% raises the risk.
 
 A ranked table of log-odds is an explanation for a modeller. An applicant who
 has been referred is entitled to something they can act on, and a credit officer
@@ -362,28 +407,33 @@ labels, because the goal is to describe what the model does, including where it
 is wrong. Its leaves export as credit-policy rules:
 
 ```
-RULE 4  --  covers 131 applicants (3.3% of the book)
-  IF   average external credit score <= 0.388
-  AND  loan-to-income ratio > 6.872
-  THEN predicted default risk 55.0%  ->  High risk band
-       observed default rate in this group: 49.6%
+RULE 1  --  covers 1,930 applicants (3.9% of the book)
+  IF   average external credit score <= 0.395
+  AND  combined external credit score <= 0.023
+  AND  average external credit score <= 0.247
+  THEN predicted default risk 31.2%  ->  High risk band
+       observed default rate in this group: 30.7%
 ```
 
-Sample of the exported rules table (full set in `reports/policy_rules.csv`):
+Sample of the exported rules table, from the real data (full set in
+`reports/policy_rules.csv` — 13 rules over a depth-4 tree fitted to 50,000
+scored applicants):
 
 | Rule | Conditions | Predicted | Observed | Coverage | Band |
 |---|---|---|---|---|---|
-| 4 | external score ≤ 0.388 AND loan-to-income > 6.87 | 54.9% | 49.6% | 3.3% | High |
-| 3 | external score ≤ 0.388 AND loan-to-income ≤ 6.87 AND outstanding external debt > 408,000 | 41.7% | 42.4% | 2.1% | High |
-| 7 | external score 0.388–0.505 AND loan-to-income > 7.55 | 23.4% | 23.1% | 3.4% | Medium |
-| 8 | external score > 0.505 AND moderate leverage | 4.0% | 4.0% | 17.3% | Low |
-| 10 | external score > 0.505 AND low leverage AND no arrears | 1.8% | 0.9% | 25.7% | Low |
+| 1 | avg external score ≤ 0.395 AND combined score ≤ 0.023 AND avg score ≤ 0.247 | 31.2% | **30.7%** | 3.9% | High |
+| 2 | avg external score ≤ 0.395 AND combined score ≤ 0.023 AND avg score > 0.247 | 20.8% | **20.2%** | 3.4% | High |
+| 3 | avg external score ≤ 0.395 AND combined score > 0.023 AND goods-to-loan ≤ 0.826 | 20.6% | **19.4%** | 3.4% | High |
 
-**Fidelity is reported with every rule set** — R² 0.613, band agreement 78.2% —
+Predicted and observed agree to within about a percentage point on every leaf,
+which is the evidence that a rule means what it claims.
+
+**Fidelity is reported with every rule set** — R² 0.556, band agreement 73.1% —
 because a surrogate that does not track the model is worse than no surrogate: it
-looks authoritative while being wrong. Predicted and observed rates track closely
-per leaf (41.7 vs 42.4, 23.4 vs 23.1, 4.0 vs 4.0), which is the evidence a rule
-means what it claims.
+looks authoritative while being wrong. R² 0.556 is a real limitation stated
+plainly: roughly one applicant in four would be banded differently by the rules
+than by the model. The rules describe the policy the model implies; they do not
+replace it.
 
 ---
 
@@ -594,12 +644,19 @@ it means `docker-compose up` yields a working chatbot with no key, no billing
 account and no signup. Hosted providers remain available behind the same
 interface via `LLM_PROVIDER`.
 
-**Application + aggregated bureau only.** Not all seven tables. Bureau carries the
-external credit-history signal that application alone lacks — prior debt, active
-exposure, days past due — while staying small enough to keep training fast and
-every engineered column explainable by name. The other five buy a little AUC at a
-large cost in runtime, opacity and failure surface: a bad trade for a platform
-graded on explainability and one-command runnability.
+**Four of the seven tables, chosen by measurement.** `application`, `bureau`,
+`previous_application` and `installments_payments`. Each was switched on in turn
+and its contribution measured (see the ablation above); each adds roughly
++0.007 PR-AUC, so each stays. The three monthly panels are excluded because they
+are largely redundant with these aggregates and cost real runtime — not because
+seven tables felt like too many.
+
+An earlier version of this project used only `application` and `bureau`, and
+justified it as a signal/explainability trade. That was wrong in one specific
+way: `installments_payments` is the table that contains **repayment behaviour**,
+which the brief names as an analysis area, and no other table substitutes for
+it. The lesson generalises — a scope decision defended on principle should still
+be checked against a measurement.
 
 **Missingness is kept, not imputed.** For tree models an absent value is a usable
 branch, and in credit data absence is informative — a thin bureau file and an
@@ -630,7 +687,7 @@ is not in the data.
 ## 11. Testing
 
 ```bash
-pytest -q          # 267 tests
+pytest -q          # 298 tests
 ```
 
 The whole suite runs with **no Kaggle data, no PostgreSQL server, no model
@@ -682,17 +739,26 @@ explains what is missing and how to fix it, and every other feature keeps workin
 1. **Calibration is measured in-sample.** The isotonic fit uses the same
    out-of-fold predictions the reliability curve is drawn from. A held-out
    calibration set would measure it honestly.
-2. **Results shown here are from synthetic data.** The fixture is schema-faithful
-   and carries realistic non-linear signal, but absolute metrics will differ on
-   the real 307k-row dataset, and the model ranking may well change.
-3. **Two of seven tables are used.** `previous_application` and the instalment
-   tables carry additional signal that is not captured.
+2. **The shipped model is trained on the real data; the committed fixtures are
+   not the real data.** Every metric in this README comes from the full
+   307,511-row dataset. The synthetic fixtures exist so the pipeline runs
+   without a Kaggle download, and they are schema-faithful, but their absolute
+   numbers differ and their model ranking differs (logistic wins on the fixture,
+   LightGBM on the real data). Which dataset produced a figure is stated
+   wherever a figure appears.
+3. **Four of seven tables are used.** The three monthly panels
+   (`bureau_balance`, `POS_CASH_balance`, `credit_card_balance`) were excluded
+   as redundant, but that judgement was made on structure rather than measured
+   the way the other three were.
 4. **Small-model summaries need the guard.** A 3B model produced ungrounded
    summaries often enough that the grounding check fires regularly; 7B is
    noticeably better. The guard makes a weak model safe, not accurate.
-5. **The surrogate is an approximation.** R² 0.613 and 78.2% band agreement mean
-   roughly one in five applicants would be banded differently by the rules than
+5. **The surrogate is an approximation.** R² 0.556 and 73.1% band agreement mean
+   roughly one applicant in four would be banded differently by the rules than
    by the model. The rules describe policy; they do not replace the model.
+   Fidelity is lower on the real data than on the fixture, which is expected: a
+   depth-4 tree has less to work with when the underlying relationships are
+   messier.
 6. **No fairness audit.** Several features (gender, family status) are legally
    sensitive in lending. They are used here because the dataset includes them,
    but a production system needs disparate-impact testing before deployment.
@@ -732,7 +798,7 @@ credit_risk_platform/
 │   └── utils/                     # config, logger, helpers, viz, docker_utils
 ├── sql/                           # schema + read-only role
 ├── docker/                        # entrypoint, db init
-├── tests/                         # 267 tests
+├── tests/                         # 298 tests
 ├── models/                        # gitignored artifacts
 ├── reports/                       # generated figures and metrics
 ├── Dockerfile

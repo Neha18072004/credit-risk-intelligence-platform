@@ -17,6 +17,34 @@ os.environ.setdefault("DATA_MODE", "sample")
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.fixture(scope="session", autouse=True)
+def isolated_artifacts(tmp_path_factory):
+    """Redirect every writable output directory into a temporary tree.
+
+    Without this, running the test suite destroys the trained model: the
+    training fixture calls train(save=True), which writes into the real
+    ``models/`` directory, and the EDA tests overwrite ``reports/``. That is
+    not merely inconvenient for this project -- it would silently replace a
+    production model with one fitted to synthetic fixtures, and the only
+    symptom would be metrics quietly changing.
+
+    Autouse and session-scoped so it applies before anything can write.
+    """
+    from src.utils.config import settings
+
+    models = tmp_path_factory.mktemp("models")
+    reports = tmp_path_factory.mktemp("reports")
+    original = (settings.models_dir, settings.reports_dir)
+
+    settings.models_dir = models
+    settings.reports_dir = reports
+    settings.ensure_directories()
+    try:
+        yield
+    finally:
+        settings.models_dir, settings.reports_dir = original
+
+
 @pytest.fixture(scope="session")
 def sample_dir() -> Path:
     """Directory holding the committed synthetic fixtures."""

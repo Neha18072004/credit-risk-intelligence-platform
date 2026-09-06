@@ -104,3 +104,16 @@ def test_env_example_documents_every_setting() -> None:
     )
     assert not (fields - documented), f"undocumented settings: {sorted(fields - documented)}"
     assert not (documented - fields), f"stale entries: {sorted(documented - fields)}"
+
+
+def test_tests_do_not_write_to_the_real_artifact_directories() -> None:
+    """The suite must not overwrite a trained model with a fixture-trained one.
+
+    Regression test: running pytest replaced the model trained on the full
+    307k-row dataset with one fitted to the 4,000-row synthetic fixtures, and
+    the only symptom was the reported metrics quietly changing.
+    """
+    from src.utils.config import PROJECT_ROOT, settings
+
+    assert PROJECT_ROOT / "models" != settings.models_dir
+    assert PROJECT_ROOT / "reports" != settings.reports_dir

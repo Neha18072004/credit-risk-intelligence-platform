@@ -21,6 +21,7 @@ by the bake-off and may be any of the three:
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
@@ -141,7 +142,12 @@ class ShapExplainer:
 
         if self.model_name == "lightgbm":
             explainer = self._lightgbm_explainer()
-            values = explainer.shap_values(features)
+            with warnings.catch_warnings():
+                # SHAP warns that LightGBM binary output is now a list of
+                # arrays. That change is already handled immediately below, so
+                # the warning is noise on every explanation.
+                warnings.filterwarnings("ignore", message=".*list of ndarray.*")
+                values = explainer.shap_values(features)
             expected = explainer.expected_value
             # Older SHAP returns a per-class list; newer may return a 3-D array.
             if isinstance(values, list):
