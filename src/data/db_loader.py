@@ -268,6 +268,29 @@ def create_schema(engine: Engine) -> None:
     logger.info("Created schema (%s)", engine.dialect.name)
 
 
+def _coerce_integer_columns(frame: pd.DataFrame) -> pd.DataFrame:
+    """Store whole-number columns as integers rather than floats.
+
+    Counts and 0/1 flags arrive as float64 because a LEFT JOIN introduces NaN
+    for applicants with no history. Written straight out, SQLite stores them as
+    ``'1.0'`` text, so a generated ``WHERE ever_paid_late = 1`` silently matches
+    nothing -- a wrong answer rather than an error, which is the worst kind.
+    Pandas' nullable ``Int64`` keeps the missing values while giving both
+    backends a real integer column.
+    """
+    adjusted = frame.copy()
+    for column in adjusted.columns:
+        series = adjusted[column]
+        if not pd.api.types.is_float_dtype(series):
+            continue
+        present = series.dropna()
+        if present.empty or not np.isfinite(present).all():
+            continue
+        if (present % 1 == 0).all():
+            adjusted[column] = series.astype("Int64")
+    return adjusted
+
+
 def write_tables(tables: dict[str, pd.DataFrame], engine: Engine, chunk_size: int = 1000) -> None:
     """Write each dataframe into its table.
 
@@ -279,7 +302,7 @@ def write_tables(tables: dict[str, pd.DataFrame], engine: Engine, chunk_size: in
     for name, frame in tables.items():
         # Pandas maps NaN to NULL, but numpy NaN in an integer-typed column
         # raises on insert, so normalise first.
-        cleaned = frame.replace({np.nan: None})
+        cleaned = _coerce_integer_columns(frame).replace({np.nan: None})
         cleaned.to_sql(
             name, engine, if_exists="replace" if engine.dialect.name == "sqlite" else "append",
             index=False, chunksize=chunk_size, method="multi",

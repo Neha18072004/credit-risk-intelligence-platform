@@ -515,3 +515,55 @@ def test_token_usage_is_reported(fake_llm, live_schema, monkeypatch, analytics_d
     payload = result.to_dict()
     assert payload["tokens"]["total"] > 0
     assert payload["prompt_version"] == PROMPT_VERSION
+
+
+def test_flag_columns_are_queryable_as_integers(analytics_db) -> None:
+    """A 0/1 flag must match `= 1`, not silently match nothing.
+
+    Regression test: counts and flags arrive as float64 because a LEFT JOIN
+    introduces NaN, and written straight out SQLite stored them as '1.0' text.
+    A generated `WHERE ever_paid_late = 1` then returned zero rows -- a wrong
+    answer rather than an error, which no validator can catch.
+    """
+    from sqlalchemy import text
+
+    with analytics_db.connect() as connection:
+        tables = {
+            row[0] for row in connection.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table'")
+            )
+        }
+        if "credit_behaviour" not in tables:
+            pytest.skip("credit_behaviour requires the auxiliary fixtures")
+
+        matched = connection.execute(
+            text("SELECT COUNT(*) FROM credit_behaviour WHERE ever_paid_late = 1")
+        ).scalar()
+        assert matched > 0, "flag comparison matched nothing"
+
+        types = {
+            row[0] for row in connection.execute(
+                text("SELECT DISTINCT typeof(ever_paid_late) FROM credit_behaviour")
+            )
+        }
+        assert types <= {"integer", "null"}, f"flag stored as {types}"
+
+
+def test_repayment_behaviour_is_queryable_end_to_end(live_schema, analytics_db) -> None:
+    """The block the brief calls 'repayment behaviour' must be reachable by SQL."""
+    if "credit_behaviour" not in live_schema:
+        pytest.skip("credit_behaviour requires the auxiliary fixtures")
+
+    validator = SQLValidator(live_schema, max_rows=200)
+    sql = (
+        "SELECT c.ever_paid_late, COUNT(*) AS applicants, "
+        "ROUND(AVG(a.target) * 100, 2) AS default_rate_pct "
+        "FROM applications a JOIN credit_behaviour c ON c.sk_id_curr = a.sk_id_curr "
+        "WHERE a.target IS NOT NULL GROUP BY c.ever_paid_late"
+    )
+    validation = validator.validate(sql)
+    assert validation.is_valid, validation.reason
+
+    result = execute_sql(validation.sql, engine=analytics_db)
+    assert result.success, result.error
+    assert result.row_count > 0
