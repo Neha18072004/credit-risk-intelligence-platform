@@ -61,6 +61,13 @@ _ORDINAL_STEPS: Final[tuple[str, ...]] = (
     "#256abf", "#1c5cab", "#184f95", "#104281", "#0d366b",
 )
 
+# Diverging pair for signed contributions (SHAP): warm/cool poles that read as
+# opposite, with a neutral gray midpoint. Validated together -- CVD deltaE 21.6,
+# normal-vision 32.3, both clear of the floors.
+DIVERGING_NEGATIVE: Final[str] = "#2a78d6"  # cool: reduces risk
+DIVERGING_POSITIVE: Final[str] = "#e34948"  # warm: increases risk
+DIVERGING_MIDPOINT: Final[str] = "#f0efec"  # neutral gray: no effect
+
 # Reserved status colours for risk bands. Always paired with a text label.
 STATUS: Final[dict[str, str]] = {
     "good": "#0ca30c",

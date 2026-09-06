@@ -512,9 +512,17 @@ def tune_thresholds(
       predictions. F2 is reported alongside it, because in lending a missed
       default usually costs more than a declined good applicant, and a reviewer
       may prefer the recall-weighted point.
-    * **Low band edge** -- the highest probability at which applicants below it
-      still default at or under the configured target rate. This makes "Low
-      risk" a statement about realised default rate, not an arbitrary cut.
+    * **Low band edge** -- the portfolio base rate. An applicant is "Low risk"
+      when their predicted probability is no worse than the average applicant
+      in the book, which is a statement a credit committee can actually reason
+      about.
+
+      An earlier version set this edge wherever the *average* default rate of
+      everyone below it met a 5% target. That was wrong in a way worth
+      recording: averaging over a wide band hid its own upper end, and put
+      applicants with a 13-16% individual default probability in the band
+      labelled "Low". Band edges have to bound the marginal applicant, not the
+      mean of the group.
     * **High band edge** -- the tuned decision threshold, so the High band is
       exactly the population the model would action.
 
@@ -539,12 +547,10 @@ def tune_thresholds(
     decision_threshold = float(cuts[best_f1_index])
     best_f2_index = int(np.argmax(f2))
 
-    # Low band: the largest cut whose population still meets the target rate.
-    low_edge = float(np.quantile(calibrated, 0.10))
-    for candidate in np.quantile(calibrated, np.linspace(0.05, 0.90, 60)):
-        below = calibrated <= candidate
-        if below.sum() >= 30 and y[below].mean() <= settings.risk_band_low_max:
-            low_edge = float(candidate)
+    # Low band edge: the portfolio base rate, bounded by the decision threshold
+    # so the bands can never invert on an unusual sample.
+    base_rate = float(y.mean())
+    low_edge = float(min(base_rate, decision_threshold * 0.9))
     high_edge = max(decision_threshold, low_edge + 1e-6)
 
     bands = _band_profile(calibrated, y, low_edge, high_edge)
@@ -557,6 +563,12 @@ def tune_thresholds(
         "f2_optimal_recall": round(float(recall[best_f2_index]), 4),
         "band_low_max": round(low_edge, 6),
         "band_medium_max": round(high_edge, 6),
+        "band_definition": (
+            "Low: predicted default probability at or below the portfolio base "
+            "rate. Medium: above the base rate but below the tuned decision "
+            "threshold. High: at or above the tuned decision threshold, i.e. "
+            "the population the model refers for review."
+        ),
         "band_profile": bands,
         "calibration_method": settings.calibration_method,
         "risk_score_scale": settings.risk_score_scale,

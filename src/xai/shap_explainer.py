@@ -22,6 +22,7 @@ by the bake-off and may be any of the three:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Final
 
 import numpy as np
@@ -222,3 +223,99 @@ class ShapExplainer:
             len(sample), ranked.iloc[0]["feature"], ranked.iloc[0]["importance_pct"],
         )
         return ranked.reset_index(drop=True)
+
+
+# --------------------------------------------------------------------------- #
+# Figures
+# --------------------------------------------------------------------------- #
+def plot_global_importance(importance: pd.DataFrame, top_n: int = 15) -> Path:
+    """Chart the portfolio-level feature ranking.
+
+    One series, one colour -- the bar length already encodes magnitude, so
+    colouring each bar by its own value would burn the only free channel on
+    information the chart is already showing.
+
+    Args:
+        importance: Output of :meth:`ShapExplainer.global_importance`.
+        top_n: How many features to draw.
+
+    Returns:
+        Path to the saved figure.
+    """
+    from src.utils.viz import (
+        SERIES, apply_theme, label_bars, new_figure, save_figure, style_axes,
+    )
+
+    apply_theme()
+    frame = importance.head(top_n).iloc[::-1]
+
+    fig, ax = new_figure(figsize=(9.0, 0.38 * len(frame) + 1.8))
+    style_axes(ax, xgrid=True, ygrid=False)
+    bars = ax.barh(frame["feature"], frame["mean_abs_shap"], color=SERIES[0], height=0.62)
+    label_bars(
+        ax, bars, frame["importance_pct"].tolist(), fmt="{:.1f}%",
+        horizontal=True, pad=0.02,
+    )
+    ax.set_xlim(0, frame["mean_abs_shap"].max() * 1.18)
+    ax.set_xlabel("Mean |SHAP value|  (impact on log-odds of default)")
+    ax.set_title("What drives the model across the portfolio")
+    fig.tight_layout()
+    return save_figure(fig, "13_shap_global_importance")
+
+
+def plot_local_explanation(
+    contributions: list[FeatureContribution], probability: float, applicant_id: object = None
+) -> Path:
+    """Chart one applicant's SHAP contributions as a diverging bar chart.
+
+    Signed values get the validated diverging pair -- cool for contributions
+    that reduce risk, warm for those that raise it -- because the sign is the
+    whole point of a local explanation. Every bar is labelled, so the direction
+    never rests on colour alone.
+
+    Args:
+        contributions: Ranked contributions from :meth:`ShapExplainer.explain_row`.
+        probability: The applicant's calibrated default probability.
+        applicant_id: Optional identifier for the title.
+
+    Returns:
+        Path to the saved figure.
+    """
+    from src.utils.viz import (
+        BASELINE, DIVERGING_NEGATIVE, DIVERGING_POSITIVE,
+        apply_theme, new_figure, save_figure, style_axes,
+    )
+
+    apply_theme()
+    ordered = sorted(contributions, key=lambda c: c.contribution)
+    values = [c.contribution for c in ordered]
+    labels = [f"{c.feature}  =  {c.value:,.4g}"
+              if isinstance(c.value, (int, float, np.number)) else f"{c.feature}  =  {c.value}"
+              for c in ordered]
+    colors = [DIVERGING_POSITIVE if v > 0 else DIVERGING_NEGATIVE for v in values]
+
+    fig, ax = new_figure(figsize=(9.5, 0.42 * len(ordered) + 1.8))
+    style_axes(ax, xgrid=True, ygrid=False)
+    ax.barh(range(len(ordered)), values, color=colors, height=0.62)
+    ax.axvline(0, color=BASELINE, linewidth=1.0)
+    ax.set_yticks(range(len(ordered)))
+    ax.set_yticklabels(labels, fontsize=9)
+
+    # Symmetric limits: a diverging scale must not imply that one direction
+    # carries more range than the other.
+    span = max(abs(min(values)), abs(max(values))) or 1.0
+    ax.set_xlim(-span * 1.2, span * 1.2)
+    for index, value in enumerate(values):
+        offset = span * 0.03
+        ax.text(
+            value + (offset if value > 0 else -offset), index, f"{value:+.3f}",
+            va="center", ha="left" if value > 0 else "right", fontsize=8.5,
+            color=DIVERGING_POSITIVE if value > 0 else DIVERGING_NEGATIVE,
+        )
+
+    ax.set_xlabel("SHAP contribution to log-odds of default  "
+                  "(left = reduces risk, right = increases risk)")
+    subject = f"Applicant {applicant_id}" if applicant_id is not None else "This applicant"
+    ax.set_title(f"{subject} scored {100 * probability:.1f}% default probability -- here is why")
+    fig.tight_layout()
+    return save_figure(fig, "14_shap_local_explanation")
