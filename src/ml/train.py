@@ -153,7 +153,9 @@ def build_logistic_pipeline(
                     # reweights the loss rather than resampling the data.
                     class_weight="balanced",
                     max_iter=2000,
-                    C=0.1,  # mild regularisation; the one-hot matrix is wide
+                    # Searched value. Strong regularisation, which is expected:
+                    # the one-hot matrix is wide and the signal is weak.
+                    C=0.01,
                     solver="lbfgs",
                     random_state=settings.random_seed,
                 ),
@@ -174,13 +176,18 @@ def build_lightgbm(scale_pos_weight: float) -> Any:
     """
     from lightgbm import LGBMClassifier
 
+    # These are not guesses. They come from the randomised search in
+    # tune_candidate(), run over 12 settings on the full 307,511-row dataset and
+    # scored on average precision. Baked in as defaults so the shipped model is
+    # the tuned one without every user having to repeat a multi-minute search;
+    # `--tune` reproduces it, and should be re-run after any feature change.
     return LGBMClassifier(
         objective="binary",
         n_estimators=400,
         learning_rate=0.05,
-        num_leaves=24,
+        num_leaves=31,
         max_depth=6,
-        min_child_samples=40,
+        min_child_samples=80,
         subsample=0.85,
         subsample_freq=1,
         colsample_bytree=0.75,
@@ -211,11 +218,12 @@ def build_catboost(scale_pos_weight: float, categorical_features: list[str]) -> 
     """
     from catboost import CatBoostClassifier
 
+    # Searched values, as for LightGBM above.
     return CatBoostClassifier(
         iterations=400,
-        learning_rate=0.05,
+        learning_rate=0.1,
         depth=5,
-        l2_leaf_reg=3.0,
+        l2_leaf_reg=9.0,
         scale_pos_weight=scale_pos_weight,
         cat_features=categorical_features,
         eval_metric="PRAUC",
@@ -402,7 +410,13 @@ def tune_candidate(
             n_splits=3, shuffle=True, random_state=settings.random_seed
         ),  # 3 folds inside the search; the outer 5-fold still judges the result
         random_state=settings.random_seed,
-        n_jobs=1 if name == "catboost" else -1,  # CatBoost parallelises internally
+        # One search process, not many. LightGBM and CatBoost already use all
+        # cores internally, so n_jobs=-1 here spawns a worker per core and each
+        # holds its own copy of the feature matrix. On the full 307k x 198
+        # dataset that exhausted memory and joblib began killing workers
+        # mid-search. Threading inside one process gets the same parallelism at
+        # a fraction of the memory.
+        n_jobs=1,
         refit=False,
         error_score="raise",
     )

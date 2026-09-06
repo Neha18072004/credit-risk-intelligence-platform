@@ -302,14 +302,17 @@ def fit_surrogate(
     return SurrogateReport(rules=rules, fidelity=fidelity, tree=tree, feature_names=feature_names)
 
 
-def derive_rules_from_trained_model(sample_size: int = 4000) -> SurrogateReport:
+def derive_rules_from_trained_model(sample_size: int = 50_000) -> SurrogateReport:
     """Build the policy rules for the currently deployed model.
 
     Loads the trained artifacts, scores the training population, fits the
     surrogate against those scores and returns the rules.
 
     Args:
-        sample_size: Maximum rows used to fit the surrogate.
+        sample_size: Maximum rows used to fit the surrogate. Large enough that
+            each leaf still covers thousands of applicants on the full dataset,
+            so a rule's realised default rate is a stable estimate rather than
+            an artefact of a small slice.
 
     Returns:
         The surrogate report.

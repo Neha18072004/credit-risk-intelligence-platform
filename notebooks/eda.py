@@ -647,19 +647,91 @@ def insight_affordability(frame: pd.DataFrame, save: bool = True) -> Insight:
     fig.tight_layout()
 
     combined = pd.concat(tables, ignore_index=True)
-    credit_table = tables[0]
-    spread = credit_table["default_rate"].iloc[-1] - credit_table["default_rate"].iloc[0]
-    takeaway = (
-        f"Default rate moves {spread:+.1f} percentage points from the least to the most "
-        "leveraged quintile of loan-to-income. The absolute loan amount is a poor risk "
-        "indicator on its own -- what matters is the amount relative to what the applicant "
-        "earns. Practical use: cap loan-to-income at the point where the rate crosses the "
-        "portfolio average rather than applying one flat maximum loan size, and treat a high "
-        "instalment-to-income ratio as the affordability constraint at origination."
+
+    def describe(table: pd.DataFrame, label: str) -> tuple[str, bool]:
+        """Describe one ratio honestly: shape first, then whether it separates.
+
+        Trend is judged by rank correlation rather than strict monotonicity. A
+        single trailing band that dips two-tenths of a point should not turn a
+        real upward trend into "not monotonic", but a genuine inverted U should
+        never be reported as a trend at all.
+        """
+        rates = table["default_rate"]
+        positions = np.arange(len(rates), dtype=float)
+        trend = float(pd.Series(positions).corr(rates.reset_index(drop=True), method="spearman"))
+        peak = int(rates.reset_index(drop=True).idxmax())
+        # The peak sitting strictly inside the range, above both ends, is the
+        # signature of an inverted U rather than a weak trend.
+        humped = (
+            0 < peak < len(rates) - 1
+            and rates.iloc[peak] > rates.iloc[0]
+            and rates.iloc[peak] > rates.iloc[-1]
+        )
+        separated = _separated(table)
+
+        if humped and abs(trend) < 0.6:
+            shape = (
+                f"{label} is not monotonic at all: it peaks at {rates.max():.1f}% in the "
+                f"{table['segment'].iloc[peak]} band while both extremes sit lower "
+                f"({rates.iloc[0]:.1f}% and {rates.iloc[-1]:.1f}%)"
+            )
+            usable = False
+        elif trend >= 0.6:
+            shape = (
+                f"{label} rises with leverage, from {rates.iloc[0]:.1f}% to "
+                f"{rates.max():.1f}%"
+            )
+            usable = separated
+        elif trend <= -0.6:
+            shape = (
+                f"{label} falls as the ratio rises, from {rates.iloc[0]:.1f}% to "
+                f"{rates.iloc[-1]:.1f}%"
+            )
+            usable = separated
+        else:
+            shape = (
+                f"{label} shows no consistent trend, spanning only "
+                f"{rates.min():.1f}% to {rates.max():.1f}%"
+            )
+            usable = False
+        return shape, usable
+
+    credit_shape, credit_usable = describe(tables[0], "Loan-to-income")
+    annuity_shape, annuity_usable = describe(tables[1], "Instalment-to-income")
+
+    if annuity_usable and not credit_usable:
+        title = "The instalment burden separates risk; loan size alone does not"
+        advice = (
+            "Practical use: constrain affordability on the *instalment* relative to income, "
+            "not on loan size relative to income. A large loan repaid over a long term can be "
+            "more affordable than a small one repaid quickly, and only the instalment ratio "
+            "captures that."
+        )
+    elif credit_usable and annuity_usable:
+        title = "Affordability ratios separate risk better than raw amounts"
+        advice = (
+            "Practical use: both ratios are usable as affordability constraints at "
+            "origination, in preference to any flat maximum loan size."
+        )
+    else:
+        title = "Affordability ratios separate risk only weakly here"
+        advice = (
+            "Practical use: neither ratio is strong enough on its own to carry a decline "
+            "rule; treat them as inputs to the model rather than as standalone policy."
+        )
+
+    hump_note = (
+        " The shape of the loan-to-income curve is worth pausing on: the most heavily "
+        "leveraged applicants are not the riskiest. The likeliest reason is that very high "
+        "loan-to-income ratios pick up secured and longer-term products rather than "
+        "distressed borrowing -- which is exactly why the raw ratio makes a poor decline "
+        "rule on its own."
+        if not credit_usable
+        else ""
     )
+    takeaway = f"{credit_shape}. {annuity_shape}.{hump_note} {advice}"
     path = save_figure(fig, "05_affordability") if save else None
-    return Insight("affordability", "Affordability ratios separate risk better than raw amounts",
-                   takeaway, combined, path)
+    return Insight("affordability", title, takeaway, combined, path)
 
 
 def insight_employment_anomaly(frame: pd.DataFrame, save: bool = True) -> Insight:
@@ -957,7 +1029,8 @@ def insight_credit_history(frame: pd.DataFrame, save: bool = True) -> Insight:
         "and flagged rather than imputed -- 'no history' is a distinct risk state, not a missing "
         "value to fill in. Practical use: prior arrears is the most defensible decline or "
         "referral trigger in the feature set, because it is behavioural rather than demographic "
-        "and is externally verifiable."
+        "and is externally verifiable -- though prior conduct on *our own* loans, covered "
+        "in the next insight, is more defensible still."
     )
     combined = pd.concat(
         [profile_table.assign(view="profile"), debt_table.assign(view="debt_ratio")],
@@ -1088,8 +1161,8 @@ def insight_repayment_behaviour(frame: pd.DataFrame, save: bool = True) -> Insig
     takeaway = (
         f"Applicants who have ever paid one of our instalments late default at "
         f"{late_rate:.1f}%, against {ontime_rate:.1f}% for those who always paid on time "
-        f"-- {multiple:.1f}x. This is the single most actionable signal in the platform, and "
-        "not because it is the largest: it is the most *defensible*. Every other strong "
+        f"-- {multiple:.1f}x. The gap is smaller than the external-score spread, and that is "
+        "the point: this is not the *largest* signal, it is the most **defensible** one. Every other strong "
         "feature is a proxy -- education stands in for income stability, an external score "
         "summarises another institution's judgement -- whereas this is the applicant's own "
         "conduct on their own obligations, recorded by us and auditable. Practical use: a "
