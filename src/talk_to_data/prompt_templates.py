@@ -30,7 +30,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Final
 
-PROMPT_VERSION: Final[str] = "1.5.0"
+PROMPT_VERSION: Final[str] = "1.6.0"
 
 # --------------------------------------------------------------------------- #
 # Schema description
@@ -73,6 +73,21 @@ TABLE bureau_summary  -- bureau rolled up to one row per applicant (all applican
   bureau_days_overdue_max FLOAT, bureau_overdue_loan_count INT
   bureau_has_overdue SMALLINT (1 = has prior arrears)
   bureau_has_history SMALLINT (0 = thin file, no external credit record at all)
+
+TABLE credit_behaviour  -- prior conduct with THIS lender (repayment behaviour)
+  sk_id_curr INT PK FK -> applications.sk_id_curr
+  prev_application_count, prev_refused_count INT
+  prev_refused_rate FLOAT (share of prior applications this lender declined)
+  prev_ever_refused SMALLINT (1 = declined at least once before)
+  prev_credit_to_application FLOAT (granted / requested; below 1 = cut back)
+  prev_avg_credit_granted FLOAT
+  instalments_paid_count INT
+  avg_days_past_due, worst_days_past_due FLOAT (positive = paid late)
+  late_payment_count INT, late_payment_rate FLOAT (share of instalments paid late)
+  ever_paid_late SMALLINT (1 = has ever paid an instalment late)
+  avg_payment_ratio FLOAT (paid / owed; below 1 = underpaid)
+  underpaid_rate FLOAT, total_shortfall FLOAT
+  NOTE: not every applicant has borrowed here before; rows are absent for those.
 
 TABLE predictions  -- model output, one row per applicant
   sk_id_curr INT PK FK -> applications.sk_id_curr
@@ -197,6 +212,21 @@ FEW_SHOT_EXAMPLES: Final[tuple[FewShotExample, ...]] = (
             "LIMIT 10"
         ),
         teaches="row-level ranking with a filter; an explicit LIMIT for top-N questions",
+    ),
+    FewShotExample(
+        question="Do applicants who paid late on previous loans default more often?",
+        sql=(
+            "SELECT CASE WHEN c.ever_paid_late = 1 THEN 'Paid late before'\n"
+            "            ELSE 'Always paid on time' END AS repayment_history,\n"
+            "       COUNT(*) AS applicants,\n"
+            "       ROUND(AVG(a.target) * 100, 2) AS default_rate_pct,\n"
+            "       ROUND(AVG(c.late_payment_rate)::numeric * 100, 2) AS avg_late_instalment_pct\n"
+            "FROM applications a\n"
+            "JOIN credit_behaviour c ON c.sk_id_curr = a.sk_id_curr\n"
+            "WHERE a.target IS NOT NULL\n"
+            "GROUP BY c.ever_paid_late"
+        ),
+        teaches="the repayment-behaviour table; joining it, and casting a float before ROUND",
     ),
     FewShotExample(
         question="How much data is missing for the external credit scores?",

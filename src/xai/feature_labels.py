@@ -103,6 +103,40 @@ FEATURE_LABELS: Final[dict[str, str]] = {
     "WEEKDAY_APPR_PROCESS_START": "day the application was submitted",
     "OWN_CAR_AGE": "age of the applicant's car",
     "NAME_TYPE_SUITE": "who accompanied the applicant",
+    # --- prior applications to this lender ---
+    "PREV_COUNT": "number of previous applications to us",
+    "PREV_APPROVED_COUNT": "previous applications we approved",
+    "PREV_REFUSED_COUNT": "previous applications we declined",
+    "PREV_REFUSED_RATE": "share of previous applications we declined",
+    "PREV_APPROVED_RATE": "share of previous applications we approved",
+    "PREV_EVER_REFUSED": "has been declined by us before",
+    "PREV_CANCELLED_COUNT": "previous applications cancelled",
+    "PREV_CREDIT_TO_APPLICATION": "credit granted versus credit requested",
+    "PREV_AMT_APPLICATION_MEAN": "average amount previously requested",
+    "PREV_AMT_APPLICATION_MAX": "largest amount previously requested",
+    "PREV_AMT_CREDIT_MEAN": "average credit previously granted",
+    "PREV_AMT_ANNUITY_MEAN": "average previous instalment",
+    "PREV_DOWN_PAYMENT_RATE_MEAN": "average previous down-payment rate",
+    "PREV_DAYS_DECISION_MAX": "time since most recent application to us",
+    "PREV_DAYS_DECISION_MIN": "time since first application to us",
+    "PREV_CNT_PAYMENT_MEAN": "average previous loan term",
+    "PREV_HAS_HISTORY": "has applied to us before",
+    # --- repayment behaviour on prior loans ---
+    "INST_COUNT": "number of instalments paid",
+    "INST_DPD_MEAN": "average days past due",
+    "INST_DPD_MAX": "worst days past due",
+    "INST_DPD_SUM": "total days past due",
+    "INST_LATE_COUNT": "number of late payments",
+    "INST_LATE_RATE": "share of instalments paid late",
+    "INST_EVER_LATE": "has ever paid an instalment late",
+    "INST_PAYMENT_RATIO_MEAN": "average share of each instalment paid",
+    "INST_PAYMENT_RATIO_MIN": "smallest share of an instalment paid",
+    "INST_UNDERPAID_COUNT": "number of underpaid instalments",
+    "INST_UNDERPAID_RATE": "share of instalments underpaid",
+    "INST_SHORTFALL_SUM": "total amount underpaid",
+    "INST_AMT_PAYMENT_SUM": "total repaid to us",
+    "INST_DAYS_LAST_INSTALMENT": "time since last instalment due",
+    "INST_HAS_HISTORY": "has repaid a loan with us before",
 }
 
 # The Home Credit property block: 14 building attributes, each present as an
@@ -148,6 +182,7 @@ _BINARY_FEATURES: Final[frozenset[str]] = frozenset(
     {
         "DAYS_EMPLOYED_ANOMALY", "BUREAU_HAS_OVERDUE", "BUREAU_HAS_HISTORY",
         "FLAG_OWN_CAR", "FLAG_OWN_REALTY", "FLAG_EMP_PHONE", "FLAG_PHONE", "FLAG_EMAIL",
+        "PREV_EVER_REFUSED", "PREV_HAS_HISTORY", "INST_EVER_LATE", "INST_HAS_HISTORY",
     }
 )
 
@@ -157,6 +192,8 @@ _MONEY_FEATURES: Final[frozenset[str]] = frozenset(
         "AMT_INCOME_TOTAL", "AMT_CREDIT", "AMT_ANNUITY", "AMT_GOODS_PRICE",
         "INCOME_PER_FAMILY_MEMBER", "BUREAU_DEBT_TOTAL", "BUREAU_DEBT_MEAN",
         "BUREAU_CREDIT_SUM_TOTAL", "BUREAU_CREDIT_SUM_MEAN", "BUREAU_CREDIT_SUM_MAX",
+        "PREV_AMT_CREDIT_MEAN", "PREV_AMT_APPLICATION_MEAN", "PREV_AMT_APPLICATION_MAX",
+        "PREV_AMT_ANNUITY_MEAN", "INST_SHORTFALL_SUM", "INST_AMT_PAYMENT_SUM",
     }
 )
 
@@ -165,7 +202,9 @@ _SHARE_FEATURES: Final[frozenset[str]] = frozenset(
     {
         "BUREAU_DEBT_CREDIT_RATIO", "BUREAU_ACTIVE_RATIO", "EMPLOYED_TO_AGE_RATIO",
         "CHILDREN_RATIO", "PAYMENT_RATE", "GOODS_TO_CREDIT_RATIO",
-        "ANNUITY_TO_INCOME_RATIO",
+        "ANNUITY_TO_INCOME_RATIO", "PREV_REFUSED_RATE", "PREV_APPROVED_RATE",
+        "INST_LATE_RATE", "INST_UNDERPAID_RATE", "INST_PAYMENT_RATIO_MEAN",
+        "INST_PAYMENT_RATIO_MIN", "PREV_CREDIT_TO_APPLICATION",
     }
 )
 

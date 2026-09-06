@@ -340,6 +340,7 @@ def _draw_target(
     df: pd.DataFrame,
     rng: np.random.Generator,
     bureau_drivers: pd.DataFrame | None = None,
+    behaviour_drivers: pd.DataFrame | None = None,
 ) -> np.ndarray:
     """Sample ``TARGET`` from a logistic model over the generated features.
 
@@ -357,6 +358,10 @@ def _draw_target(
             credit-history block genuinely predictive, as it is in the real
             data; omitting them would leave every ``BUREAU_*`` feature as pure
             noise and make the bureau join look worthless downstream.
+        behaviour_drivers: Optional prior-application and repayment aggregates
+            (refusal rate, late-payment rate, payment ratio). Same reasoning:
+            repayment behaviour is the strongest block in the real data, so a
+            fixture where it carries no signal would misrepresent the problem.
 
     Returns:
         A 0/1 array of realised default outcomes.
@@ -431,6 +436,24 @@ def _draw_target(
 
     # A thin file is tolerable at low leverage and dangerous at high leverage.
     logit = logit + 0.45 * thin_file * (z_leverage > 0.5)
+
+    # ---------------------------------------------------------------------
+    # Prior conduct with this lender. In the real data these are the strongest
+    # blocks after the external scores, and for good reason: being refused
+    # before is a prior credit assessment, and paying late before is the single
+    # most direct evidence of how someone repays.
+    # ---------------------------------------------------------------------
+    if behaviour_drivers is not None:
+        refused_rate = np.nan_to_num(behaviour_drivers["_REFUSED_RATE"].to_numpy(), nan=0.0)
+        late_rate = np.nan_to_num(behaviour_drivers["_LATE_RATE"].to_numpy(), nan=0.0)
+        pay_ratio = behaviour_drivers["_PAY_RATIO"].to_numpy()
+        underpayment = np.nan_to_num(1.0 - np.nan_to_num(pay_ratio, nan=1.0), nan=0.0)
+
+        logit = logit + (
+            1.10 * late_rate          # habitual lateness: the sharpest signal
+            + 0.85 * underpayment     # paying less than owed
+            + 0.70 * refused_rate     # previously declined by this lender
+        )
 
     # Bisect on the intercept until the mean probability matches the target rate.
     low, high = -12.0, 6.0
@@ -519,6 +542,157 @@ def _build_bureau(rng: np.random.Generator, applicant_ids: np.ndarray) -> pd.Dat
     return pd.DataFrame.from_records(records)
 
 
+def _build_previous_application(
+    rng: np.random.Generator, applicant_ids: np.ndarray
+) -> pd.DataFrame:
+    """Build prior applications made to this lender.
+
+    Reproduces the real table's headline property: a substantial minority of
+    prior applications were **refused**, and an applicant this lender has
+    already declined is a different proposition from a first-time applicant.
+    """
+    records: list[dict[str, object]] = []
+    next_id = 1_000_000
+
+    counts = rng.poisson(3.2, len(applicant_ids)).clip(0, 12)
+    has_history = rng.random(len(applicant_ids)) > 0.05  # ~95% have applied before
+    counts = np.where(has_history, counts, 0)
+
+    statuses = ["Approved", "Refused", "Canceled", "Unused offer"]
+    status_probs = [0.621, 0.174, 0.187, 0.018]
+    yields = ["low_normal", "middle", "high", "low_action", "XNA"]
+
+    for applicant_id, count in zip(applicant_ids, counts, strict=True):
+        # Applicant-level refusal propensity, so refusals cluster on people
+        # rather than scattering at random -- which is what makes the rate
+        # informative at all.
+        propensity = float(rng.beta(1.4, 4.0))
+        for _ in range(int(count)):
+            refused = rng.random() < propensity
+            status = "Refused" if refused else str(rng.choice(statuses, p=status_probs))
+
+            application_amount = float(np.round(rng.lognormal(np.log(120_000), 1.0) / 1000) * 1000)
+            # Granted credit falls short of the request when underwriting
+            # judged it unaffordable; a refusal grants nothing.
+            granted = 0.0 if status == "Refused" else application_amount * rng.uniform(0.75, 1.05)
+
+            records.append(
+                {
+                    "SK_ID_PREV": next_id,
+                    "SK_ID_CURR": int(applicant_id),
+                    "NAME_CONTRACT_STATUS": status,
+                    "AMT_APPLICATION": application_amount,
+                    "AMT_CREDIT": float(np.round(granted / 1000) * 1000),
+                    "AMT_ANNUITY": float(np.round(granted / rng.uniform(10, 40) / 100) * 100),
+                    "AMT_DOWN_PAYMENT": float(np.round(granted * rng.uniform(0, 0.2) / 100) * 100),
+                    "RATE_DOWN_PAYMENT": round(float(rng.uniform(0, 0.25)), 4),
+                    "DAYS_DECISION": int(-rng.integers(1, 2900)),
+                    "CNT_PAYMENT": float(rng.choice([6, 10, 12, 18, 24, 36, 48])),
+                    "NAME_YIELD_GROUP": str(rng.choice(yields)),
+                }
+            )
+            next_id += 1
+
+    return pd.DataFrame.from_records(records)
+
+
+def _build_installments(
+    rng: np.random.Generator, previous: pd.DataFrame
+) -> pd.DataFrame:
+    """Build the instalment payment history for approved prior applications.
+
+    This is the repayment-behaviour table, so the two quantities that carry the
+    signal are generated deliberately: days past due (payment date against due
+    date) and the payment ratio (amount paid against amount owed). Lateness
+    clusters by applicant, because in reality some people habitually pay late
+    and most habitually do not.
+    """
+    approved = previous[previous["NAME_CONTRACT_STATUS"] == "Approved"]
+    if approved.empty:
+        return pd.DataFrame(
+            columns=[
+                "SK_ID_PREV", "SK_ID_CURR", "NUM_INSTALMENT_VERSION",
+                "NUM_INSTALMENT_NUMBER", "DAYS_INSTALMENT", "DAYS_ENTRY_PAYMENT",
+                "AMT_INSTALMENT", "AMT_PAYMENT",
+            ]
+        )
+
+    # One lateness propensity per applicant, drawn once and reused across all
+    # their instalments.
+    applicants = approved["SK_ID_CURR"].unique()
+    propensity = dict(zip(applicants, rng.beta(1.2, 9.0, len(applicants))))
+
+    records: list[dict[str, object]] = []
+    for row in approved.itertuples(index=False):
+        n_instalments = int(min(row.CNT_PAYMENT, 24))
+        if n_instalments <= 0 or row.AMT_CREDIT <= 0:
+            continue
+        amount = float(row.AMT_CREDIT) / n_instalments
+        late_rate = propensity[row.SK_ID_CURR]
+        start = float(row.DAYS_DECISION) + 30
+
+        for number in range(1, n_instalments + 1):
+            due = start + 30 * number
+            if due > 0:  # instalment falls after the application date
+                break
+            is_late = rng.random() < late_rate
+            days_late = float(rng.integers(1, 60)) if is_late else -float(rng.integers(0, 10))
+            # Late payers also underpay sometimes; on-time payers rarely do.
+            underpays = rng.random() < (0.5 * late_rate)
+            paid = amount * (rng.uniform(0.3, 0.95) if underpays else 1.0)
+
+            records.append(
+                {
+                    "SK_ID_PREV": int(row.SK_ID_PREV),
+                    "SK_ID_CURR": int(row.SK_ID_CURR),
+                    "NUM_INSTALMENT_VERSION": 1.0,
+                    "NUM_INSTALMENT_NUMBER": number,
+                    "DAYS_INSTALMENT": round(due, 1),
+                    "DAYS_ENTRY_PAYMENT": round(due + days_late, 1),
+                    "AMT_INSTALMENT": round(amount, 2),
+                    "AMT_PAYMENT": round(paid, 2),
+                }
+            )
+
+    return pd.DataFrame.from_records(records)
+
+
+def _behaviour_risk_drivers(
+    previous: pd.DataFrame, installments: pd.DataFrame, applicant_ids: pd.Series
+) -> pd.DataFrame:
+    """Summarise prior-application and repayment history into target drivers.
+
+    Without this the new blocks would be uncorrelated with default by
+    construction, exactly as the bureau block once was -- the features would
+    exist and mean nothing.
+    """
+    frame = pd.DataFrame(index=pd.Index(applicant_ids, name="SK_ID_CURR"))
+
+    if not previous.empty:
+        grouped = previous.assign(
+            _refused=(previous["NAME_CONTRACT_STATUS"] == "Refused").astype(float)
+        ).groupby("SK_ID_CURR")["_refused"].mean()
+        frame["_REFUSED_RATE"] = grouped
+    else:
+        frame["_REFUSED_RATE"] = np.nan
+
+    if not installments.empty:
+        late = (
+            installments["DAYS_ENTRY_PAYMENT"] - installments["DAYS_INSTALMENT"]
+        ).clip(lower=0)
+        ratio = installments["AMT_PAYMENT"] / installments["AMT_INSTALMENT"].replace(0, np.nan)
+        summary = pd.DataFrame(
+            {"SK_ID_CURR": installments["SK_ID_CURR"], "_late": (late > 0).astype(float),
+             "_ratio": ratio}
+        ).groupby("SK_ID_CURR").agg(_LATE_RATE=("_late", "mean"), _PAY_RATIO=("_ratio", "mean"))
+        frame = frame.join(summary)
+    else:
+        frame["_LATE_RATE"] = np.nan
+        frame["_PAY_RATIO"] = np.nan
+
+    return frame.reset_index(drop=True)
+
+
 def _bureau_risk_drivers(bureau: pd.DataFrame, applicant_ids: pd.Series) -> pd.DataFrame:
     """Summarise the bureau table into the three drivers that feed the target.
 
@@ -580,7 +754,11 @@ def generate(output_dir: Path | None = None, seed: int | None = None) -> dict[st
     bureau = _build_bureau(rng, combined["SK_ID_CURR"].to_numpy())
     drivers = _bureau_risk_drivers(bureau, combined["SK_ID_CURR"])
 
-    target = _draw_target(combined, rng, drivers)
+    previous = _build_previous_application(rng, combined["SK_ID_CURR"].to_numpy())
+    installments = _build_installments(rng, previous)
+    behaviour = _behaviour_risk_drivers(previous, installments, combined["SK_ID_CURR"])
+
+    target = _draw_target(combined, rng, drivers, behaviour)
     combined = _apply_missing(combined, rng, _MISSING_RATES)
 
     train = combined.iloc[:N_TRAIN].copy()
@@ -591,10 +769,14 @@ def generate(output_dir: Path | None = None, seed: int | None = None) -> dict[st
         "application_train": destination / "application_train.csv",
         "application_test": destination / "application_test.csv",
         "bureau": destination / "bureau.csv",
+        "previous_application": destination / "previous_application.csv",
+        "installments_payments": destination / "installments_payments.csv",
     }
     train.to_csv(paths["application_train"], index=False)
     test.to_csv(paths["application_test"], index=False)
     bureau.to_csv(paths["bureau"], index=False)
+    previous.to_csv(paths["previous_application"], index=False)
+    installments.to_csv(paths["installments_payments"], index=False)
 
     logger.info(
         "Wrote application_train=%s rows x %s cols (default rate %.2f%%)",
@@ -604,6 +786,16 @@ def generate(output_dir: Path | None = None, seed: int | None = None) -> dict[st
     logger.info(
         "Wrote bureau=%s rows x %s cols covering %s applicants",
         f"{len(bureau):,}", bureau.shape[1], f"{bureau['SK_ID_CURR'].nunique():,}",
+    )
+    logger.info(
+        "Wrote previous_application=%s rows x %s cols (%.0f%% refused)",
+        f"{len(previous):,}", previous.shape[1],
+        100 * (previous["NAME_CONTRACT_STATUS"] == "Refused").mean() if len(previous) else 0,
+    )
+    logger.info(
+        "Wrote installments_payments=%s rows x %s cols covering %s applicants",
+        f"{len(installments):,}", installments.shape[1],
+        f"{installments['SK_ID_CURR'].nunique():,}" if len(installments) else 0,
     )
     anomaly_rate = 100 * (train["DAYS_EMPLOYED"] == DAYS_EMPLOYED_ANOMALY).mean()
     logger.info("DAYS_EMPLOYED == %d anomaly present in %.1f%% of train rows",

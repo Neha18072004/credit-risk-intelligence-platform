@@ -92,3 +92,147 @@ def test_invalid_split_rejected() -> None:
         from src.data.loader import load_applications
 
         load_applications("validation")
+
+
+# ------------------------------------------- previous applications --------
+def test_aggregate_previous_application_computes_refusal_rate() -> None:
+    """The refusal rate is the headline feature: an applicant this lender has
+    already declined is a different proposition from a first-time applicant."""
+    from src.data.loader import PREV_PREFIX, aggregate_previous_application
+
+    previous = pd.DataFrame(
+        {
+            "SK_ID_CURR": [1, 1, 1, 1, 2, 2],
+            "SK_ID_PREV": [10, 11, 12, 13, 20, 21],
+            "NAME_CONTRACT_STATUS": [
+                "Refused", "Refused", "Approved", "Canceled", "Approved", "Approved",
+            ],
+            "AMT_APPLICATION": [100.0, 100.0, 200.0, 100.0, 500.0, 500.0],
+            "AMT_CREDIT": [0.0, 0.0, 150.0, 0.0, 500.0, 400.0],
+            "AMT_ANNUITY": [0.0, 0.0, 20.0, 0.0, 50.0, 40.0],
+            "AMT_DOWN_PAYMENT": [0.0] * 6,
+            "RATE_DOWN_PAYMENT": [0.0] * 6,
+            "DAYS_DECISION": [-100, -200, -300, -400, -50, -60],
+            "CNT_PAYMENT": [12.0] * 6,
+            "NAME_YIELD_GROUP": ["middle"] * 6,
+        }
+    )
+    result = aggregate_previous_application(previous).set_index("SK_ID_CURR")
+
+    assert result.loc[1, f"{PREV_PREFIX}COUNT"] == 4
+    assert result.loc[1, f"{PREV_PREFIX}REFUSED_COUNT"] == 2
+    assert result.loc[1, f"{PREV_PREFIX}REFUSED_RATE"] == pytest.approx(0.5)
+    assert result.loc[1, f"{PREV_PREFIX}EVER_REFUSED"] == 1
+    assert result.loc[2, f"{PREV_PREFIX}REFUSED_RATE"] == pytest.approx(0.0)
+    assert result.loc[2, f"{PREV_PREFIX}EVER_REFUSED"] == 0
+
+
+def test_previous_application_credit_to_application_ratio() -> None:
+    """Below 1 means underwriting granted less than was asked for."""
+    from src.data.loader import PREV_PREFIX, aggregate_previous_application
+
+    previous = pd.DataFrame(
+        {
+            "SK_ID_CURR": [1], "SK_ID_PREV": [10], "NAME_CONTRACT_STATUS": ["Approved"],
+            "AMT_APPLICATION": [1000.0], "AMT_CREDIT": [750.0], "AMT_ANNUITY": [80.0],
+            "AMT_DOWN_PAYMENT": [0.0], "RATE_DOWN_PAYMENT": [0.0],
+            "DAYS_DECISION": [-100], "CNT_PAYMENT": [12.0], "NAME_YIELD_GROUP": ["middle"],
+        }
+    )
+    result = aggregate_previous_application(previous)
+    assert result[f"{PREV_PREFIX}CREDIT_TO_APPLICATION"].iloc[0] == pytest.approx(0.75)
+
+
+# ------------------------------------------------ repayment behaviour -----
+def test_aggregate_installments_measures_lateness_and_underpayment() -> None:
+    """Days past due and payment ratio are the two quantities that carry the
+    repayment-behaviour signal, so their arithmetic is pinned down here."""
+    from src.data.loader import INST_PREFIX, aggregate_installments
+
+    # DAYS_* are negative offsets from application, so entry minus instalment
+    # is still positive when the payment landed late.
+    installments = pd.DataFrame(
+        {
+            "SK_ID_CURR": [1, 1, 1, 2, 2],
+            "DAYS_INSTALMENT": [-300.0, -270.0, -240.0, -100.0, -70.0],
+            "DAYS_ENTRY_PAYMENT": [-290.0, -270.0, -250.0, -100.0, -70.0],  # +10, 0, early
+            "AMT_INSTALMENT": [100.0, 100.0, 100.0, 50.0, 50.0],
+            "AMT_PAYMENT": [100.0, 60.0, 100.0, 50.0, 50.0],  # one underpayment
+        }
+    )
+    result = aggregate_installments(installments).set_index("SK_ID_CURR")
+
+    assert result.loc[1, f"{INST_PREFIX}COUNT"] == 3
+    assert result.loc[1, f"{INST_PREFIX}DPD_MAX"] == pytest.approx(10.0)
+    assert result.loc[1, f"{INST_PREFIX}LATE_COUNT"] == 1
+    assert result.loc[1, f"{INST_PREFIX}LATE_RATE"] == pytest.approx(1 / 3)
+    assert result.loc[1, f"{INST_PREFIX}EVER_LATE"] == 1
+    assert result.loc[1, f"{INST_PREFIX}UNDERPAID_COUNT"] == 1
+    assert result.loc[1, f"{INST_PREFIX}SHORTFALL_SUM"] == pytest.approx(40.0)
+
+    # Applicant 2 paid everything on time and in full.
+    assert result.loc[2, f"{INST_PREFIX}EVER_LATE"] == 0
+    assert result.loc[2, f"{INST_PREFIX}LATE_RATE"] == pytest.approx(0.0)
+    assert result.loc[2, f"{INST_PREFIX}PAYMENT_RATIO_MEAN"] == pytest.approx(1.0)
+
+
+def test_early_payment_is_not_counted_as_late() -> None:
+    """Paying early must not register as days past due."""
+    from src.data.loader import INST_PREFIX, aggregate_installments
+
+    installments = pd.DataFrame(
+        {
+            "SK_ID_CURR": [1], "DAYS_INSTALMENT": [-100.0], "DAYS_ENTRY_PAYMENT": [-120.0],
+            "AMT_INSTALMENT": [100.0], "AMT_PAYMENT": [100.0],
+        }
+    )
+    result = aggregate_installments(installments)
+    assert result[f"{INST_PREFIX}DPD_MAX"].iloc[0] == 0.0
+    assert result[f"{INST_PREFIX}EVER_LATE"].iloc[0] == 0
+
+
+def test_empty_auxiliary_tables_are_handled() -> None:
+    from src.data.loader import aggregate_installments, aggregate_previous_application
+
+    assert aggregate_previous_application(pd.DataFrame()).empty
+    assert aggregate_installments(pd.DataFrame()).empty
+
+
+# ------------------------------------------------------- composition ------
+def test_blocks_can_be_switched_off_independently() -> None:
+    """Each block is a flag so its contribution can be measured, not assumed."""
+    from src.data.loader import build_dataset
+
+    minimal = build_dataset(
+        "train", include_bureau=False, include_previous=False, include_installments=False
+    )
+    assert not any(
+        column.startswith(("BUREAU_", "PREV_", "INST_")) for column in minimal.columns
+    )
+
+    with_bureau = build_dataset(
+        "train", include_bureau=True, include_previous=False, include_installments=False
+    )
+    assert any(column.startswith("BUREAU_") for column in with_bureau.columns)
+    assert not any(column.startswith(("PREV_", "INST_")) for column in with_bureau.columns)
+
+
+def test_sample_fixtures_cover_every_table(sample_dir) -> None:
+    """The committed fixtures must exercise the same blocks as the real data,
+    or an evaluator running the default sample mode sees a lesser platform."""
+    for name in (
+        "application_train", "application_test", "bureau",
+        "previous_application", "installments_payments",
+    ):
+        assert (sample_dir / f"{name}.csv").exists(), f"missing fixture {name}.csv"
+
+
+def test_repayment_features_present_in_sample_mode(joined_dataset) -> None:
+    from src.data.loader import INST_PREFIX, PREV_PREFIX
+
+    assert f"{INST_PREFIX}LATE_RATE" in joined_dataset.columns
+    assert f"{PREV_PREFIX}REFUSED_RATE" in joined_dataset.columns
+    # And they must carry signal, not just exist.
+    late = joined_dataset[joined_dataset[f"{INST_PREFIX}EVER_LATE"] == 1]["TARGET"].mean()
+    ontime = joined_dataset[joined_dataset[f"{INST_PREFIX}EVER_LATE"] == 0]["TARGET"].mean()
+    assert late > ontime, "late payers must default more, or the fixture is noise"

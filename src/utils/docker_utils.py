@@ -28,7 +28,14 @@ TABLE_FILENAMES: dict[str, str] = {
     "application_train": "application_train.csv",
     "application_test": "application_test.csv",
     "bureau": "bureau.csv",
+    "previous_application": "previous_application.csv",
+    "installments_payments": "installments_payments.csv",
 }
+
+# Tables the pipeline can run without. Their absence is reported and the
+# corresponding features are skipped, rather than aborting the run -- the
+# committed sample fixtures only cover application and bureau.
+OPTIONAL_TABLES: frozenset[str] = frozenset({"previous_application", "installments_payments"})
 
 
 def running_in_docker() -> bool:

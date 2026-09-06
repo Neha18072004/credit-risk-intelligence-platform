@@ -83,6 +83,15 @@ class Settings(BaseSettings):
     reports_dir: Path = PROJECT_ROOT / "reports"
     max_rows: int = Field(default=0, ge=0, description="0 = read every row")
 
+    # Which auxiliary tables to join. Each is a flag rather than a hardcoded
+    # choice so its contribution can be measured (see scripts in the README)
+    # rather than assumed. The two enabled by default earned their place; the
+    # monthly panels are available but off, being largely redundant with the
+    # aggregates above and expensive to process.
+    include_bureau: bool = True
+    include_previous_application: bool = True
+    include_installments: bool = True
+
     # ----------------------------------------------------------- postgres ---
     postgres_user: str = "credit"
     postgres_password: str = "credit_pass_change_me"

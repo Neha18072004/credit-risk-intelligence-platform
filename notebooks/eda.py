@@ -968,6 +968,139 @@ def insight_credit_history(frame: pd.DataFrame, save: bool = True) -> Insight:
                    takeaway, combined, path)
 
 
+def insight_repayment_behaviour(frame: pd.DataFrame, save: bool = True) -> Insight:
+    """How the applicant repaid *our* prior loans, and how we judged them before.
+
+    This is the repayment-behaviour block the brief names as an analysis area,
+    and it is qualitatively different from everything else in the dataset. Every
+    other strong feature is a proxy -- education stands in for income stability,
+    an external score summarises someone else's judgement. This is the
+    applicant's own conduct on their own obligations, recorded by us.
+    """
+    working = frame.copy()
+    overall = 100 * frame[TARGET].mean()
+
+    panels: list[tuple[str, pd.DataFrame, str]] = []
+
+    if "INST_EVER_LATE" in working.columns:
+        history = np.where(
+            working["INST_HAS_HISTORY"].fillna(0) == 0, "No prior loan with us",
+            np.where(working["INST_EVER_LATE"].fillna(0) == 1,
+                     "Paid late before", "Always paid on time"),
+        )
+        panels.append(
+            (
+                "By repayment history",
+                default_rate_by_segment(
+                    working, pd.Series(history, index=working.index, name="repayment")
+                ).sort_values("default_rate"),
+                "",
+            )
+        )
+
+    if "INST_LATE_RATE" in working.columns:
+        late = working["INST_LATE_RATE"].dropna()
+        if late.nunique() > 5:
+            bands = _quantile_bands(late, N_BANDS, "late_rate")
+            subset = working.loc[bands.index]
+            panels.append(
+                (
+                    "By share of instalments paid late",
+                    default_rate_by_segment(
+                        subset.assign(_b=bands), subset.assign(_b=bands)["_b"]
+                    ),
+                    "Share of instalments paid late",
+                )
+            )
+
+    if "PREV_EVER_REFUSED" in working.columns:
+        refused = np.where(
+            working["PREV_HAS_HISTORY"].fillna(0) == 0, "Never applied to us",
+            np.where(working["PREV_EVER_REFUSED"].fillna(0) == 1,
+                     "Declined by us before", "Never declined"),
+        )
+        panels.append(
+            (
+                "By our own prior decisions",
+                default_rate_by_segment(
+                    working, pd.Series(refused, index=working.index, name="prior_decision")
+                ).sort_values("default_rate"),
+                "",
+            )
+        )
+
+    if not panels:
+        empty = pd.DataFrame(columns=["segment", "n", "n_default", "default_rate"])
+        return Insight(
+            "repayment_behaviour", "Repayment behaviour",
+            "Prior-application and instalment tables are not loaded, so repayment "
+            "behaviour cannot be analysed. Enable them with INCLUDE_PREVIOUS_APPLICATION "
+            "and INCLUDE_INSTALLMENTS.",
+            empty, None,
+        )
+
+    import matplotlib.pyplot as plt
+
+    fig, axes = plt.subplots(1, len(panels), figsize=(5.0 * len(panels), 4.8), sharey=True)
+    axes = np.atleast_1d(axes)
+    for ax, (title, table, xlabel) in zip(axes, panels, strict=True):
+        style_axes(ax)
+        ordered = table.sort_values("default_rate") if not xlabel else table
+        colors = (
+            ordinal_ramp(len(ordered)) if xlabel
+            else [SERIES[0]] * len(ordered)
+        )
+        bars = ax.bar(
+            range(len(ordered)), ordered["default_rate"], color=colors, width=0.6,
+            yerr=_error_bars(ordered), ecolor=INK_MUTED, capsize=3,
+            error_kw={"elinewidth": 0.9},
+        )
+        label_bars(ax, bars, ordered["default_rate"].tolist(), fmt="{:.1f}%", pad=0.03,
+                   tops=ordered["ci_high"].tolist())
+        ax.set_xticks(range(len(ordered)))
+        ax.set_xticklabels(
+            [f"{str(s)[:22]}\n(n={n:,})"
+             for s, n in zip(ordered["segment"], ordered["n"], strict=True)],
+            fontsize=8, rotation=15 if xlabel else 0,
+        )
+        ax.set_title(title)
+        if xlabel:
+            ax.set_xlabel(xlabel)
+        add_reference_line(ax, overall, f"{overall:.1f}%")
+    axes[0].set_ylabel("Default rate (%)")
+
+    fig.suptitle(
+        "How someone repaid us before is the most direct evidence we have",
+        x=0.02, ha="left", fontsize=12, fontweight="600",
+    )
+    fig.tight_layout()
+
+    combined = pd.concat(
+        [table.assign(view=title) for title, table, _ in panels], ignore_index=True
+    )
+
+    # The takeaway reads its claim off the data rather than asserting it.
+    first = panels[0][1].set_index("segment")
+    late_rate = float(first.loc["Paid late before", "default_rate"]) if "Paid late before" in first.index else float("nan")
+    ontime_rate = float(first.loc["Always paid on time", "default_rate"]) if "Always paid on time" in first.index else float("nan")
+    multiple = late_rate / ontime_rate if ontime_rate else float("nan")
+
+    takeaway = (
+        f"Applicants who have ever paid one of our instalments late default at "
+        f"{late_rate:.1f}%, against {ontime_rate:.1f}% for those who always paid on time "
+        f"-- {multiple:.1f}x. This is the single most actionable signal in the platform, and "
+        "not because it is the largest: it is the most *defensible*. Every other strong "
+        "feature is a proxy -- education stands in for income stability, an external score "
+        "summarises another institution's judgement -- whereas this is the applicant's own "
+        "conduct on their own obligations, recorded by us and auditable. Practical use: a "
+        "prior late-payment record is the cleanest basis for a referral rule, and it "
+        "survives fair-lending scrutiny in a way demographic proxies do not."
+    )
+    path = save_figure(fig, "09_repayment_behaviour") if save else None
+    return Insight("repayment_behaviour", "Prior repayment behaviour is the most defensible signal",
+                   takeaway, combined, path)
+
+
 # Registry of insight builders, in presentation order.
 INSIGHT_BUILDERS: Final[list[Callable[[pd.DataFrame, bool], Insight]]] = [
     insight_class_imbalance,
@@ -978,6 +1111,7 @@ INSIGHT_BUILDERS: Final[list[Callable[[pd.DataFrame, bool], Insight]]] = [
     insight_employment_anomaly,
     insight_demographic_segments,
     insight_credit_history,
+    insight_repayment_behaviour,
 ]
 
 

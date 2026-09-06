@@ -86,3 +86,21 @@ def test_llm_api_key_follows_provider() -> None:
         llm_provider=LLMProvider.GEMINI, google_api_key="g-key", openai_api_key="o-key"
     )
     assert config.llm_api_key == "g-key"
+
+
+def test_env_example_documents_every_setting() -> None:
+    """A setting that exists in code but not in .env.example is undiscoverable.
+
+    The brief asks for ".env.example with all required environment variables",
+    so this is checked rather than maintained by hand.
+    """
+    import re
+
+    from src.utils.config import PROJECT_ROOT
+
+    fields = {name.upper() for name in Settings.model_fields}
+    documented = set(
+        re.findall(r"^([A-Z][A-Z0-9_]*)=", (PROJECT_ROOT / ".env.example").read_text(), re.M)
+    )
+    assert not (fields - documented), f"undocumented settings: {sorted(fields - documented)}"
+    assert not (documented - fields), f"stale entries: {sorted(documented - fields)}"

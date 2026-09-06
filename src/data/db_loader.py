@@ -94,8 +94,30 @@ BUREAU_SUMMARY_COLUMNS: Final[dict[str, str]] = {
     "BUREAU_HAS_HISTORY": "bureau_has_history",
 }
 
+# Prior conduct with this lender, rolled up per applicant. Separated from
+# bureau_summary because it answers a different question: bureau is credit held
+# elsewhere, this is how the applicant behaved with *us*.
+CREDIT_BEHAVIOUR_COLUMNS: Final[dict[str, str]] = {
+    "SK_ID_CURR": "sk_id_curr",
+    "PREV_COUNT": "prev_application_count",
+    "PREV_REFUSED_COUNT": "prev_refused_count",
+    "PREV_REFUSED_RATE": "prev_refused_rate",
+    "PREV_EVER_REFUSED": "prev_ever_refused",
+    "PREV_CREDIT_TO_APPLICATION": "prev_credit_to_application",
+    "PREV_AMT_CREDIT_MEAN": "prev_avg_credit_granted",
+    "INST_COUNT": "instalments_paid_count",
+    "INST_DPD_MEAN": "avg_days_past_due",
+    "INST_DPD_MAX": "worst_days_past_due",
+    "INST_LATE_COUNT": "late_payment_count",
+    "INST_LATE_RATE": "late_payment_rate",
+    "INST_EVER_LATE": "ever_paid_late",
+    "INST_PAYMENT_RATIO_MEAN": "avg_payment_ratio",
+    "INST_UNDERPAID_RATE": "underpaid_rate",
+    "INST_SHORTFALL_SUM": "total_shortfall",
+}
+
 TABLE_NAMES: Final[tuple[str, ...]] = (
-    "applications", "bureau", "bureau_summary", "predictions",
+    "applications", "bureau", "bureau_summary", "credit_behaviour", "predictions",
 )
 
 
@@ -142,6 +164,11 @@ def build_tables(include_predictions: bool = False) -> dict[str, pd.DataFrame]:
         "bureau": _select_and_rename(load_bureau(), BUREAU_COLUMNS),
         "bureau_summary": _select_and_rename(joined, BUREAU_SUMMARY_COLUMNS),
     }
+
+    # Only materialised when the source tables were actually joined, so sample
+    # mode does not ship a table of nulls.
+    if any(column.startswith(("PREV_", "INST_")) for column in joined.columns):
+        tables["credit_behaviour"] = _select_and_rename(joined, CREDIT_BEHAVIOUR_COLUMNS)
 
     if include_predictions:
         tables["predictions"] = _build_predictions(joined)

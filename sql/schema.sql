@@ -13,6 +13,9 @@
 --                        so questions map onto columns in natural language.
 --   * bureau          -- raw external credit records, one row per prior credit.
 --   * bureau_summary  -- applicant-level aggregates of the above.
+--   * credit_behaviour -- prior applications to this lender and how those loans
+--                        were actually repaid: the genuine repayment-behaviour
+--                        block.
 --   * predictions     -- model output, so the chat can answer questions about
 --                        scores and risk bands, not just raw applicant data.
 --
@@ -20,6 +23,7 @@
 -- ===========================================================================
 
 DROP TABLE IF EXISTS predictions;
+DROP TABLE IF EXISTS credit_behaviour;
 DROP TABLE IF EXISTS bureau_summary;
 DROP TABLE IF EXISTS bureau;
 DROP TABLE IF EXISTS applications;
@@ -100,6 +104,39 @@ CREATE TABLE bureau_summary (
     bureau_has_overdue          SMALLINT,            -- 1 = has prior arrears
     bureau_has_history          SMALLINT             -- 0 = thin file, no record
 );
+
+-- ---------------------------------------------------------------------------
+-- Prior conduct with THIS lender, per applicant.
+--
+-- Separate from bureau_summary because it answers a different question: bureau
+-- is credit held elsewhere, this is how the applicant behaved with us. The
+-- late-payment and underpayment columns are the most defensible features in the
+-- dataset for a decline decision -- behavioural rather than demographic, about
+-- the applicant's own conduct, and verifiable from our own records.
+-- ---------------------------------------------------------------------------
+CREATE TABLE credit_behaviour (
+    sk_id_curr                  INTEGER PRIMARY KEY,
+    -- prior applications to this lender
+    prev_application_count      INTEGER,
+    prev_refused_count          INTEGER,
+    prev_refused_rate           DOUBLE PRECISION,   -- share previously declined
+    prev_ever_refused           SMALLINT,
+    prev_credit_to_application  DOUBLE PRECISION,   -- granted vs requested; < 1 = cut back
+    prev_avg_credit_granted     DOUBLE PRECISION,
+    -- repayment behaviour on those prior loans
+    instalments_paid_count      INTEGER,
+    avg_days_past_due           DOUBLE PRECISION,
+    worst_days_past_due         DOUBLE PRECISION,
+    late_payment_count          INTEGER,
+    late_payment_rate           DOUBLE PRECISION,   -- share of instalments paid late
+    ever_paid_late              SMALLINT,
+    avg_payment_ratio           DOUBLE PRECISION,   -- amount paid / amount due
+    underpaid_rate              DOUBLE PRECISION,
+    total_shortfall             DOUBLE PRECISION
+);
+
+CREATE INDEX idx_behaviour_late    ON credit_behaviour (ever_paid_late);
+CREATE INDEX idx_behaviour_refused ON credit_behaviour (prev_ever_refused);
 
 -- ---------------------------------------------------------------------------
 -- Model output, so the chat can answer questions about scores and bands
