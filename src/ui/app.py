@@ -546,11 +546,18 @@ def render_chat() -> None:
         if columns[index % 3].button(question, key=f"suggested_{index}", use_container_width=True):
             st.session_state["pending_question"] = question
 
-    for turn in interface.memory.turns:
+    # Rendered history lives in session state rather than being replayed from
+    # conversation memory. Memory deliberately stores only compact turn
+    # summaries -- question, SQL, row count -- to keep the prompt bounded, so
+    # replaying from it would drop the result table and the SQL panel the moment
+    # the script re-ran, leaving the user with a bare sentence.
+    history = st.session_state.setdefault("chat_history", [])
+
+    for entry in history:
         with st.chat_message("user"):
-            st.write(turn.question)
+            st.write(entry["question"])
         with st.chat_message("assistant"):
-            st.write(turn.answer if turn.succeeded else f":warning: {turn.error}")
+            _render_answer(entry)
 
     typed = st.chat_input("Ask a question about the portfolio...")
     question = typed or st.session_state.pop("pending_question", None)
@@ -564,43 +571,61 @@ def render_chat() -> None:
         with st.spinner("Generating and validating SQL..."):
             result = interface.ask(question)
 
-        if not result.success:
-            st.warning(result.answer or result.error)
-            if result.refused:
-                st.caption(
-                    "The model declined rather than inventing a column -- that is the "
-                    "intended behaviour when a question cannot be answered from the data."
-                )
-            return
+        entry = {
+            "question": question,
+            "success": result.success,
+            "answer": result.answer or result.error,
+            "error": result.error,
+            "refused": result.refused,
+            "sql": result.sql,
+            "rows": result.rows,
+            "row_count": result.row_count,
+            "elapsed": result.elapsed_seconds,
+            "tokens": result.prompt_tokens + result.completion_tokens,
+            "repaired": result.repair_attempted,
+            "tables": result.tables_used,
+            "summary_source": result.summary_source,
+            "prompt_version": result.prompt_version,
+        }
+        history.append(entry)
+        _render_answer(entry)
 
-        st.write(result.answer)
-        if result.summary_source.startswith("deterministic_after"):
+
+def _render_answer(entry: dict[str, Any]) -> None:
+    """Render one assistant turn: answer, rows and the SQL diagnostics panel."""
+    if not entry["success"]:
+        st.warning(entry["answer"])
+        if entry.get("refused"):
             st.caption(
-                ":warning: The generated summary quoted figures that were not in the result, "
-                "so it was discarded and replaced with a description of the actual rows."
+                "The model declined rather than inventing a column -- that is the "
+                "intended behaviour when a question cannot be answered from the data."
             )
+        return
 
-        if not result.rows.empty:
-            st.dataframe(result.rows, use_container_width=True, hide_index=True)
+    st.write(entry["answer"])
+    if str(entry.get("summary_source", "")).startswith("deterministic_after"):
+        st.caption(
+            ":warning: The generated summary quoted figures that were not in the result, "
+            "so it was discarded and replaced with a description of the actual rows."
+        )
 
-        with st.expander("SQL and diagnostics"):
-            st.code(result.sql, language="sql")
-            columns = st.columns(4)
-            columns[0].metric("Rows", result.row_count)
-            columns[1].metric("Time", f"{result.elapsed_seconds:.1f}s")
-            columns[2].metric("Tokens", result.prompt_tokens + result.completion_tokens)
-            columns[3].metric("Repaired", "Yes" if result.repair_attempted else "No")
-            st.caption(
-                f"Tables used: {', '.join(result.tables_used) or 'none'} | "
-                f"summary via {result.summary_source} | prompt v{result.prompt_version}"
-            )
+    rows = entry.get("rows")
+    if rows is not None and not rows.empty:
+        st.dataframe(rows, use_container_width=True, hide_index=True)
 
-    st.rerun()
+    with st.expander("SQL and diagnostics"):
+        st.code(entry["sql"], language="sql")
+        columns = st.columns(4)
+        columns[0].metric("Rows", entry["row_count"])
+        columns[1].metric("Time", f"{entry['elapsed']:.1f}s")
+        columns[2].metric("Tokens", entry["tokens"])
+        columns[3].metric("Repaired", "Yes" if entry["repaired"] else "No")
+        st.caption(
+            f"Tables used: {', '.join(entry['tables']) or 'none'} | "
+            f"summary via {entry['summary_source']} | prompt v{entry['prompt_version']}"
+        )
 
 
-# --------------------------------------------------------------------------- #
-# Sidebar and entry point
-# --------------------------------------------------------------------------- #
 def render_sidebar() -> str:
     """Render the sidebar and return the selected section."""
     with st.sidebar:
@@ -646,6 +671,7 @@ def render_sidebar() -> str:
             st.divider()
             if st.button("Clear conversation", use_container_width=True):
                 st.session_state["chat"].reset()
+                st.session_state["chat_history"] = []
                 st.rerun()
 
     return section

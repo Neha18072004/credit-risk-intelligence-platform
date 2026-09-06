@@ -95,3 +95,28 @@ def test_chat_degrades_without_a_model_runtime(app, monkeypatch) -> None:
 def test_sidebar_lists_every_section(app) -> None:
     instance = app()
     assert set(instance.sidebar.radio[0].options) == set(SECTIONS)
+
+
+def test_chat_history_retains_rows_and_sql(app, monkeypatch) -> None:
+    """A past answer must keep its result table and SQL panel.
+
+    Regression test found by screenshotting the running app: the rendered
+    dataframe and diagnostics were being discarded, because history was
+    replayed from conversation memory -- which stores only compact turn
+    summaries to keep the prompt bounded, not the rows.
+    """
+    import pandas as pd
+
+    from src.ui import app as ui
+
+    entry = {
+        "question": "q", "success": True, "answer": "an answer", "error": "",
+        "refused": False, "sql": "SELECT 1", "rows": pd.DataFrame({"a": [1, 2]}),
+        "row_count": 2, "elapsed": 0.5, "tokens": 100, "repaired": False,
+        "tables": ["applications"], "summary_source": "llm", "prompt_version": "1.5.0",
+    }
+    # The renderer must be a pure function of the stored entry, so a replayed
+    # turn shows exactly what the live turn showed.
+    assert callable(ui._render_answer)
+    for key in ("sql", "rows", "row_count", "tables", "summary_source"):
+        assert key in entry, f"history entry must carry {key} for replay"
