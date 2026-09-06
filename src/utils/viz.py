@@ -250,25 +250,40 @@ def label_bars(
     fmt: str = "{:.1f}%",
     horizontal: bool = False,
     pad: float = 0.01,
+    tops: Sequence[float] | None = None,
 ) -> None:
     """Direct-label bar ends.
 
     Static figures have no tooltip, so the value must be readable off the mark.
-    Labels are placed outside the bar end -- never inside, where a short bar
-    would clip them -- and wear text ink rather than the series colour.
+    Labels sit outside the bar end -- never inside, where a short bar would clip
+    them -- and wear text ink rather than the series colour.
+
+    Args:
+        ax: Target axes.
+        bars: The bar containers returned by ``ax.bar``/``ax.barh``.
+        values: The values to print.
+        fmt: Format string applied to each value.
+        horizontal: True for ``barh``.
+        pad: Gap between the anchor and the label, as a fraction of the span.
+        tops: Optional anchor positions overriding the bar ends. Pass the
+            confidence-interval upper bounds when error bars are drawn, so the
+            label clears the whisker instead of colliding with it.
     """
     span = max(values) if len(values) else 1.0
     offset = span * pad if span else 0.01
-    for bar, value in zip(bars, values, strict=True):
+    anchors = list(tops) if tops is not None else None
+    for index, (bar, value) in enumerate(zip(bars, values, strict=True)):
         if horizontal:
+            anchor = anchors[index] if anchors else bar.get_width()
             ax.text(
-                bar.get_width() + offset, bar.get_y() + bar.get_height() / 2,
+                anchor + offset, bar.get_y() + bar.get_height() / 2,
                 fmt.format(value), va="center", ha="left",
                 fontsize=9, color=INK_SECONDARY,
             )
         else:
+            anchor = anchors[index] if anchors else bar.get_height()
             ax.text(
-                bar.get_x() + bar.get_width() / 2, bar.get_height() + offset,
+                bar.get_x() + bar.get_width() / 2, anchor + offset,
                 fmt.format(value), ha="center", va="bottom",
                 fontsize=9, color=INK_SECONDARY,
             )

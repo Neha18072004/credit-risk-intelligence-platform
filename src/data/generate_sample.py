@@ -37,11 +37,13 @@ from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
 # --------------------------------------------------------------------------- #
-# Fixture size.  Small enough to commit, large enough for 5-fold stratified CV
-# to be stable at an ~8% positive rate.
+# Fixture size. Small enough to commit (a few MB), large enough that 5-fold
+# stratified CV sees ~60 defaults per fold and that subgroup default rates --
+# a rare education level, the ~10% of applicants with prior arrears -- are
+# estimated stably rather than swamped by sampling noise.
 # --------------------------------------------------------------------------- #
-N_TRAIN: int = 1500
-N_TEST: int = 300
+N_TRAIN: int = 4000
+N_TEST: int = 800
 TARGET_DEFAULT_RATE: float = 0.081  # real Home Credit rate is 8.07%
 
 # The sentinel Home Credit uses for "no employment record".  Roughly 18% of the
@@ -334,14 +336,30 @@ def _build_applications(rng: np.random.Generator, n_rows: int) -> pd.DataFrame:
     return pd.concat([df, pd.DataFrame(tail_block, index=df.index)], axis=1)
 
 
-def _draw_target(df: pd.DataFrame, rng: np.random.Generator) -> np.ndarray:
+def _draw_target(
+    df: pd.DataFrame,
+    rng: np.random.Generator,
+    bureau_drivers: pd.DataFrame | None = None,
+) -> np.ndarray:
     """Sample ``TARGET`` from a logistic model over the generated features.
 
     Signal is injected through the same drivers that dominate the real dataset --
-    external scores first, then age, leverage and education -- so a model fitted
-    on the fixture recovers a believable feature ranking rather than noise.
-    The intercept is solved numerically so the realised default rate lands on
-    :data:`TARGET_DEFAULT_RATE`.
+    external scores first, then age, leverage, education and prior repayment
+    behaviour -- so a model fitted on the fixture recovers a believable feature
+    ranking rather than noise. The intercept is solved numerically so the
+    realised default rate lands on :data:`TARGET_DEFAULT_RATE`.
+
+    Args:
+        df: The generated application features.
+        rng: Seeded random generator.
+        bureau_drivers: Optional applicant-level bureau aggregates (arrears
+            flag, debt ratio, thin-file flag). Passing these makes the external
+            credit-history block genuinely predictive, as it is in the real
+            data; omitting them would leave every ``BUREAU_*`` feature as pure
+            noise and make the bureau join look worthless downstream.
+
+    Returns:
+        A 0/1 array of realised default outcomes.
     """
 
     def z(values: np.ndarray) -> np.ndarray:
@@ -373,6 +391,17 @@ def _draw_target(df: pd.DataFrame, rng: np.random.Generator) -> np.ndarray:
         + 0.14 * (df["NAME_CONTRACT_TYPE"] == "Revolving loans").to_numpy()
         + rng.normal(0.0, 0.45, len(df))  # irreducible noise -> realistic AUC
     )
+
+    # Prior repayment behaviour. In the real data this is the most actionable
+    # block in the whole feature set, so the fixture has to reproduce its
+    # direction: arrears and high outstanding leverage raise risk, and a thin
+    # file (no external history at all) carries its own modest penalty.
+    if bureau_drivers is not None:
+        logit = logit + (
+            0.90 * bureau_drivers["_HAS_OVERDUE"].to_numpy()
+            + 0.45 * z(bureau_drivers["_DEBT_RATIO"].to_numpy())
+            + 0.25 * bureau_drivers["_THIN_FILE"].to_numpy()
+        )
 
     # Bisect on the intercept until the mean probability matches the target rate.
     low, high = -12.0, 6.0
@@ -424,7 +453,7 @@ def _build_bureau(rng: np.random.Generator, applicant_ids: np.ndarray) -> pd.Dat
                 days_credit_enddate = float(days_credit + duration)
 
             # Overdue is rare but is the strongest bureau-side risk signal.
-            overdue_days = int(rng.integers(1, 180)) if rng.random() < 0.035 else 0
+            overdue_days = int(rng.integers(1, 180)) if rng.random() < 0.055 else 0
             max_overdue = (
                 float(np.round(rng.lognormal(np.log(4_000), 1.3)))
                 if rng.random() < 0.28
@@ -461,6 +490,37 @@ def _build_bureau(rng: np.random.Generator, applicant_ids: np.ndarray) -> pd.Dat
     return pd.DataFrame.from_records(records)
 
 
+def _bureau_risk_drivers(bureau: pd.DataFrame, applicant_ids: pd.Series) -> pd.DataFrame:
+    """Summarise the bureau table into the three drivers that feed the target.
+
+    Deliberately a small, honest subset of what :func:`aggregate_bureau`
+    computes downstream -- the point is to make prior repayment behaviour
+    genuinely predictive, not to hand the model a copy of the label.
+
+    Args:
+        bureau: The generated bureau table.
+        applicant_ids: Every applicant id, including those with no bureau rows.
+
+    Returns:
+        A frame aligned to ``applicant_ids`` with ``_HAS_OVERDUE``,
+        ``_DEBT_RATIO`` and ``_THIN_FILE``.
+    """
+    grouped = bureau.groupby("SK_ID_CURR").agg(
+        _overdue=("CREDIT_DAY_OVERDUE", "max"),
+        _debt=("AMT_CREDIT_SUM_DEBT", "sum"),
+        _credit=("AMT_CREDIT_SUM", "sum"),
+    )
+    frame = pd.DataFrame(index=pd.Index(applicant_ids, name="SK_ID_CURR")).join(grouped)
+
+    drivers = pd.DataFrame(index=frame.index)
+    drivers["_HAS_OVERDUE"] = (frame["_overdue"].fillna(0) > 0).astype(float)
+    drivers["_DEBT_RATIO"] = np.where(
+        frame["_credit"].fillna(0) > 0, frame["_debt"] / frame["_credit"], np.nan
+    )
+    drivers["_THIN_FILE"] = frame["_overdue"].isna().astype(float)
+    return drivers.reset_index(drop=True)
+
+
 def generate(output_dir: Path | None = None, seed: int | None = None) -> dict[str, Path]:
     """Generate all three fixture CSVs and write them to ``output_dir``.
 
@@ -485,14 +545,18 @@ def generate(output_dir: Path | None = None, seed: int | None = None) -> dict[st
     )
     combined = pd.concat([ids, combined], axis=1)
 
-    target = _draw_target(combined, rng)
+    # Bureau is generated first so its aggregates can drive the target. Order
+    # matters: if the label were drawn before the credit history existed, every
+    # BUREAU_* feature would be uncorrelated with default by construction.
+    bureau = _build_bureau(rng, combined["SK_ID_CURR"].to_numpy())
+    drivers = _bureau_risk_drivers(bureau, combined["SK_ID_CURR"])
+
+    target = _draw_target(combined, rng, drivers)
     combined = _apply_missing(combined, rng, _MISSING_RATES)
 
     train = combined.iloc[:N_TRAIN].copy()
     train.insert(1, "TARGET", target[:N_TRAIN])
     test = combined.iloc[N_TRAIN:].copy().reset_index(drop=True)
-
-    bureau = _build_bureau(rng, combined["SK_ID_CURR"].to_numpy())
 
     paths = {
         "application_train": destination / "application_train.csv",
