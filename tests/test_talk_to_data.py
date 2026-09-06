@@ -152,6 +152,35 @@ def test_grounding_flags_invented_arithmetic() -> None:
     assert 3999 in unsupported
 
 
+def test_grounding_accepts_numbers_inside_category_labels() -> None:
+    """Band boundaries live in label text, and quoting them is grounded.
+
+    Regression test: scanning only numeric columns flagged a correct summary of
+    a banded query as fabricated.
+    """
+    frame = pd.DataFrame(
+        {
+            "score_band": ["1. Very low (<0.3)", "4. High (>=0.6)"],
+            "default_rate_pct": [30.12, 2.34],
+        }
+    )
+    grounded, unsupported = verify_summary_grounding(
+        "Default risk falls from 30.12% below 0.3 to 2.34% at 0.6 and above.", frame
+    )
+    assert grounded, f"wrongly flagged {unsupported}"
+
+
+def test_grounding_rejects_a_false_empty_claim() -> None:
+    """A summary can contradict the data without quoting a single number.
+
+    Regression test: a model answered "No rows matched." over a two-row result.
+    """
+    frame = pd.DataFrame({"arrears": [0, 1], "rate": [7.69, 13.28]})
+    assert not verify_summary_grounding("No rows matched.", frame)[0]
+    assert not verify_summary_grounding("The query returned no data.", frame)[0]
+    assert verify_summary_grounding("Arrears default at 13.28% versus 7.69%.", frame)[0]
+
+
 def test_grounding_allows_small_ordinals() -> None:
     frame = pd.DataFrame({"rate": [16.0]})
     assert verify_summary_grounding("The top 3 groups, worst at 16.0%.", frame)[0]

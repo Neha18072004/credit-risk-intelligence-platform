@@ -227,18 +227,39 @@ def _numbers_in(text: str) -> list[float]:
 def _supported_values(frame: pd.DataFrame) -> set[float]:
     """Every number a grounded summary is allowed to quote.
 
-    That is the cell values themselves, plus the row count, plus a rounded form
-    of each value so that re-rounding 8.53 to 8.5 is not flagged as invention.
+    That is the numeric cell values, plus any numbers embedded in *text* cells,
+    plus the row count, plus a rounded form of each so that re-rounding 8.53 to
+    8.5 is not flagged as invention.
+
+    Text cells matter more than they look. A banded query returns labels like
+    ``"1. Very low (<0.3)"``, and a summary quoting that boundary is perfectly
+    grounded -- scanning only the numeric columns flagged those as fabricated.
     """
     values: set[float] = {float(len(frame))}
+
+    def remember(number: float) -> None:
+        values.add(number)
+        values.add(round(number, 1))
+        values.add(round(number))
+
     for column in frame.columns:
-        series = pd.to_numeric(frame[column], errors="coerce").dropna()
-        for value in series:
-            number = float(value)
-            values.add(number)
-            values.add(round(number, 1))
-            values.add(round(number))
+        series = frame[column]
+        numeric = pd.to_numeric(series, errors="coerce")
+        for value in numeric.dropna():
+            remember(float(value))
+        # Numbers inside category labels are part of the result too.
+        for value in series[numeric.isna()].dropna().astype(str):
+            for embedded in _numbers_in(value):
+                remember(embedded)
     return values
+
+
+# Phrases that assert an empty result. If a summary uses one while rows exist,
+# it is contradicting the data it was given.
+_EMPTY_CLAIM_PATTERNS: Final[tuple[str, ...]] = (
+    "no rows", "no results", "no data", "no records", "no applicants match",
+    "nothing matched", "did not return any", "returned none", "empty result",
+)
 
 
 def verify_summary_grounding(answer: str, frame: pd.DataFrame) -> tuple[bool, list[float]]:
@@ -264,6 +285,14 @@ def verify_summary_grounding(answer: str, frame: pd.DataFrame) -> tuple[bool, li
     """
     if frame.empty:
         return True, []
+
+    # A summary claiming the result was empty when it was not is ungrounded even
+    # though it quotes no figures at all. Observed in testing: a model answered
+    # "No rows matched." over a two-row result.
+    lowered = answer.lower()
+    if any(phrase in lowered for phrase in _EMPTY_CLAIM_PATTERNS):
+        logger.warning("Summary claimed an empty result over %d rows", len(frame))
+        return False, []
 
     supported = _supported_values(frame)
     unsupported: list[float] = []
