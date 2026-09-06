@@ -630,7 +630,7 @@ is not in the data.
 ## 11. Testing
 
 ```bash
-pytest -q          # 265 tests
+pytest -q          # 267 tests
 ```
 
 The whole suite runs with **no Kaggle data, no PostgreSQL server, no model
@@ -732,7 +732,7 @@ credit_risk_platform/
 │   └── utils/                     # config, logger, helpers, viz, docker_utils
 ├── sql/                           # schema + read-only role
 ├── docker/                        # entrypoint, db init
-├── tests/                         # 265 tests
+├── tests/                         # 267 tests
 ├── models/                        # gitignored artifacts
 ├── reports/                       # generated figures and metrics
 ├── Dockerfile
