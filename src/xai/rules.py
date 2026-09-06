@@ -31,56 +31,15 @@ from sklearn.metrics import r2_score
 from sklearn.tree import DecisionTreeRegressor, _tree
 
 from src.utils.config import settings
+from src.utils.helpers import bound_probability
 from src.utils.logger import get_logger
+from src.xai.feature_labels import humanise
 
 logger = get_logger(__name__)
 
 # Leaves covering fewer applicants than this are not worth writing into policy:
 # the rule would be fitted to noise.
 MIN_LEAF_FRACTION: Final[float] = 0.02
-
-# Readable names for the engineered features, so a rule reads like credit policy
-# rather than like a column dump.
-FEATURE_LABELS: Final[dict[str, str]] = {
-    "EXT_SOURCE_MEAN": "average external credit score",
-    "EXT_SOURCE_MIN": "lowest external credit score",
-    "EXT_SOURCE_MAX": "highest external credit score",
-    "EXT_SOURCE_PROD": "combined external credit score",
-    "EXT_SOURCE_1": "external credit score 1",
-    "EXT_SOURCE_2": "external credit score 2",
-    "EXT_SOURCE_3": "external credit score 3",
-    "CREDIT_TO_INCOME_RATIO": "loan-to-income ratio",
-    "ANNUITY_TO_INCOME_RATIO": "instalment-to-income ratio",
-    "CREDIT_TO_ANNUITY_RATIO": "loan term (years, implied)",
-    "PAYMENT_RATE": "payment rate",
-    "GOODS_TO_CREDIT_RATIO": "goods-value-to-loan ratio",
-    "AGE_YEARS": "age (years)",
-    "EMPLOYED_YEARS": "employment tenure (years)",
-    "EMPLOYED_TO_AGE_RATIO": "share of adult life in current job",
-    "DAYS_EMPLOYED_ANOMALY": "no employment record (pensioner/unemployed)",
-    "BUREAU_HAS_OVERDUE": "has prior arrears on external credit",
-    "BUREAU_HAS_HISTORY": "has any external credit history",
-    "BUREAU_DEBT_CREDIT_RATIO": "share of external credit still outstanding",
-    "BUREAU_DEBT_TO_INCOME": "external debt-to-income ratio",
-    "BUREAU_LOAN_COUNT": "number of prior external credits",
-    "BUREAU_ACTIVE_COUNT": "number of active external credits",
-    "BUREAU_DAYS_OVERDUE_MAX": "worst days past due on external credit",
-    "AMT_INCOME_TOTAL": "annual income",
-    "AMT_CREDIT": "loan amount",
-    "AMT_ANNUITY": "annual instalment",
-    "CREDIT_ENQUIRY_TOTAL": "recent credit enquiries",
-    "DOCUMENT_SUBMITTED_COUNT": "documents submitted",
-}
-
-
-def humanise(feature: str) -> str:
-    """Return a readable label for a feature name."""
-    if feature in FEATURE_LABELS:
-        return FEATURE_LABELS[feature]
-    if " = " in feature:  # one-hot indicator, already readable
-        return feature
-    return feature.replace("_", " ").lower()
-
 
 @dataclass(frozen=True)
 class Condition:
@@ -369,8 +328,8 @@ def derive_rules_from_trained_model(sample_size: int = 4000) -> SurrogateReport:
             features[column] = features[column].astype(str)
     features = features[bundle.feature_names]
 
-    probabilities = np.clip(
-        bundle.calibrator.predict(bundle.model.predict_proba(features)[:, 1]), 0.0, 1.0
+    probabilities = bound_probability(
+        bundle.calibrator.predict(bundle.model.predict_proba(features)[:, 1])
     )
     labels = raw["TARGET"].to_numpy() if "TARGET" in raw.columns else None
 

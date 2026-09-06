@@ -176,6 +176,33 @@ def read_json(path: Path) -> Any:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
+# A calibrated probability is never allowed to reach 0 or 1. Isotonic regression
+# returns exactly those values wherever a calibration bin happened to be pure,
+# but a finite sample cannot justify certainty, and "100% probability of
+# default" is not a statement a lender could defend to an applicant or a
+# regulator. The bound corresponds to roughly 1-in-1000, which is well below the
+# resolution this data supports.
+PROBABILITY_FLOOR: float = 0.001
+PROBABILITY_CEILING: float = 0.999
+
+
+def bound_probability(probability: float | np.ndarray) -> float | np.ndarray:
+    """Clamp calibrated probabilities away from absolute certainty.
+
+    Applied wherever a calibrator's output is consumed -- threshold tuning,
+    banding and inference alike -- so the bands, the metrics and what an
+    applicant is told all describe the same numbers.
+
+    Args:
+        probability: Raw calibrator output.
+
+    Returns:
+        The same values clipped to ``[PROBABILITY_FLOOR, PROBABILITY_CEILING]``.
+    """
+    clipped = np.clip(probability, PROBABILITY_FLOOR, PROBABILITY_CEILING)
+    return float(clipped) if np.isscalar(probability) else clipped
+
+
 def probability_to_score(probability: float | np.ndarray) -> float | np.ndarray:
     """Convert a calibrated default probability into a risk score.
 

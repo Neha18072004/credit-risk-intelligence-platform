@@ -20,19 +20,20 @@ from src.xai.rules import (
 def test_humanise_maps_engineered_names() -> None:
     assert humanise("EXT_SOURCE_MEAN") == "average external credit score"
     assert humanise("CREDIT_TO_INCOME_RATIO") == "loan-to-income ratio"
-    # One-hot indicators are already readable and pass through untouched.
+    # One-hot indicators are translated too, so a rule reads as credit policy.
     assert humanise("NAME_EDUCATION_TYPE = Higher education") == (
-        "NAME_EDUCATION_TYPE = Higher education"
+        "education level is Higher education"
     )
     # Unknown names degrade to something readable rather than raising.
     assert humanise("SOME_NEW_COLUMN") == "some new column"
 
 
 def test_condition_renders_indicator_as_membership() -> None:
+    """A split on a one-hot column reads as a plain membership test."""
     positive = Condition("NAME_INCOME_TYPE = Pensioner", ">", 0.5, is_indicator=True)
     negative = Condition("NAME_INCOME_TYPE = Pensioner", "<=", 0.5, is_indicator=True)
-    assert positive.describe() == "NAME_INCOME_TYPE = Pensioner"
-    assert negative.describe().startswith("NOT ")
+    assert positive.describe() == "employment type is Pensioner"
+    assert negative.describe() == "NOT employment type is Pensioner"
 
 
 def test_rule_renders_as_if_then_policy() -> None:
@@ -191,3 +192,79 @@ def test_shap_figures_are_written(trained_artifacts, joined_dataset) -> None:
     assert plot_local_explanation(
         result.top_contributions, result.probability, result.applicant_id
     ).exists()
+
+
+# ------------------------------------------------- non-technical framing ----
+def test_feature_labels_are_plain_english() -> None:
+    """Explanations must not show raw column names to a credit officer."""
+    from src.xai.feature_labels import format_value, humanise
+
+    assert humanise("BUREAU_DEBT_CREDIT_RATIO") == "share of external credit still unpaid"
+    assert humanise("EXT_SOURCE_MEAN") == "average external credit score"
+    assert humanise("NAME_EDUCATION_TYPE = Higher education") == (
+        "education level is Higher education"
+    )
+    # Unknown names degrade readably rather than raising.
+    assert humanise("SOME_NEW_COLUMN") == "some new column"
+
+    assert format_value("BUREAU_HAS_OVERDUE", 1.0) == "yes"
+    assert format_value("BUREAU_DEBT_CREDIT_RATIO", 0.59) == "59%"
+    assert format_value("AMT_INCOME_TOTAL", 147000.0) == "147,000"
+    assert format_value("AGE_YEARS", 34.2) == "34 years"
+    assert format_value("EXT_SOURCE_MEAN", float("nan")) == "not provided"
+
+
+def test_shap_and_rules_share_one_vocabulary() -> None:
+    """The two explanation surfaces must never name a feature differently."""
+    from src.xai.rules import humanise as rules_humanise
+    from src.xai.shap_explainer import humanise as shap_humanise
+
+    for feature in ("EXT_SOURCE_MEAN", "CREDIT_TO_INCOME_RATIO", "BUREAU_HAS_OVERDUE"):
+        assert rules_humanise(feature) == shap_humanise(feature)
+
+
+def test_narrative_is_readable_and_balanced(trained_artifacts, joined_dataset) -> None:
+    """A referred applicant is owed an explanation they can actually read."""
+    from src.ml.predict import predict_applicant, score_frame
+
+    scored = score_frame(joined_dataset.head(300)).sort_values("probability_of_default")
+    riskiest = predict_applicant(joined_dataset.loc[[scored.index[-1]]], top_n=8)
+    safest = predict_applicant(joined_dataset.loc[[scored.index[0]]], top_n=8)
+
+    for result in (riskiest, safest):
+        text = result.explanation
+        assert result.risk_band in text
+        assert "%" in text
+        # No raw column names may leak into the narrative.
+        assert "EXT_SOURCE" not in text
+        assert "AMT_" not in text
+        assert "_" not in text.replace("**", ""), f"raw identifier leaked: {text}"
+
+    assert "increasing risk" in riskiest.explanation
+    assert "in their favour" in safest.explanation
+
+
+def test_no_prediction_claims_certainty(trained_artifacts, joined_dataset) -> None:
+    """A finite sample cannot justify a 0% or 100% probability of default.
+
+    Isotonic calibration returns exactly 0 and 1 wherever a calibration bin was
+    pure, which produced narratives asserting "100.0% estimated probability of
+    default" -- not a statement a lender could defend.
+    """
+    from src.ml.predict import score_frame
+    from src.utils.helpers import PROBABILITY_CEILING, PROBABILITY_FLOOR
+
+    probabilities = score_frame(joined_dataset.head(500))["probability_of_default"]
+    assert probabilities.min() >= PROBABILITY_FLOOR
+    assert probabilities.max() <= PROBABILITY_CEILING
+    assert not (probabilities == 0).any()
+    assert not (probabilities == 1).any()
+
+
+def test_contribution_strength_buckets() -> None:
+    from src.xai.shap_explainer import FeatureContribution
+
+    assert FeatureContribution("EXT_SOURCE_MEAN", 0.2, 0.80).strength == "major"
+    assert FeatureContribution("EXT_SOURCE_MEAN", 0.2, 0.30).strength == "moderate"
+    assert FeatureContribution("EXT_SOURCE_MEAN", 0.2, 0.08).strength == "minor"
+    assert FeatureContribution("EXT_SOURCE_MEAN", 0.2, 0.01).strength == "negligible"

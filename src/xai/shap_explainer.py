@@ -29,6 +29,7 @@ import numpy as np
 import pandas as pd
 
 from src.utils.logger import get_logger
+from src.xai.feature_labels import format_value, humanise
 
 logger = get_logger(__name__)
 
@@ -50,10 +51,44 @@ class FeatureContribution:
         """``"increases risk"`` or ``"decreases risk"``."""
         return "increases risk" if self.contribution > 0 else "decreases risk"
 
+    @property
+    def label(self) -> str:
+        """Plain-English name for the feature."""
+        return humanise(self.feature)
+
+    @property
+    def display_value(self) -> str:
+        """Plain-English rendering of the applicant's value."""
+        return format_value(self.feature, self.value)
+
+    @property
+    def strength(self) -> str:
+        """Qualitative magnitude, for readers who should not be shown log-odds.
+
+        The thresholds are on the log-odds scale: 0.5 is roughly a 1.6x change
+        in the odds of default, which is a substantial single driver, while
+        anything under 0.1 barely moves the decision.
+        """
+        magnitude = abs(self.contribution)
+        if magnitude >= 0.5:
+            return "major"
+        if magnitude >= 0.2:
+            return "moderate"
+        if magnitude >= 0.05:
+            return "minor"
+        return "negligible"
+
     def describe(self) -> str:
-        """One human-readable line, for the UI and adverse-action reasons."""
-        shown = f"{self.value:,.4g}" if isinstance(self.value, (int, float, np.number)) else self.value
-        return f"{self.feature} = {shown} ({self.direction}, {self.contribution:+.4f})"
+        """One readable line, for the UI and adverse-action reasons."""
+        return (
+            f"{self.label} = {self.display_value} "
+            f"({self.direction}, {self.strength} effect, {self.contribution:+.4f})"
+        )
+
+    def as_sentence(self) -> str:
+        """A clause a non-technical reader can act on."""
+        verb = "raises" if self.contribution > 0 else "lowers"
+        return f"their {self.label} of {self.display_value} {verb} the risk"
 
 
 class ShapExplainer:
@@ -247,7 +282,8 @@ def plot_global_importance(importance: pd.DataFrame, top_n: int = 15) -> Path:
     )
 
     apply_theme()
-    frame = importance.head(top_n).iloc[::-1]
+    frame = importance.head(top_n).iloc[::-1].copy()
+    frame["feature"] = frame["feature"].map(humanise)
 
     fig, ax = new_figure(figsize=(9.0, 0.38 * len(frame) + 1.8))
     style_axes(ax, xgrid=True, ygrid=False)
@@ -289,9 +325,7 @@ def plot_local_explanation(
     apply_theme()
     ordered = sorted(contributions, key=lambda c: c.contribution)
     values = [c.contribution for c in ordered]
-    labels = [f"{c.feature}  =  {c.value:,.4g}"
-              if isinstance(c.value, (int, float, np.number)) else f"{c.feature}  =  {c.value}"
-              for c in ordered]
+    labels = [f"{c.label}  =  {c.display_value}" for c in ordered]
     colors = [DIVERGING_POSITIVE if v > 0 else DIVERGING_NEGATIVE for v in values]
 
     fig, ax = new_figure(figsize=(9.5, 0.42 * len(ordered) + 1.8))
@@ -319,3 +353,64 @@ def plot_local_explanation(
     ax.set_title(f"{subject} scored {100 * probability:.1f}% default probability -- here is why")
     fig.tight_layout()
     return save_figure(fig, "14_shap_local_explanation")
+
+
+# --------------------------------------------------------------------------- #
+# Plain-English narrative
+# --------------------------------------------------------------------------- #
+def narrate_explanation(
+    contributions: list[FeatureContribution],
+    probability: float,
+    risk_band: str,
+    decision: str,
+    max_reasons: int = 3,
+) -> str:
+    """Turn a SHAP explanation into a paragraph a non-specialist can read.
+
+    A ranked table of log-odds values is an explanation for a modeller. An
+    applicant who has been referred for review is entitled to something they can
+    actually act on, and a credit officer needs to be able to repeat the reason
+    out loud. This renders the same numbers as prose, naming the drivers in both
+    directions so the account is balanced rather than only adverse.
+
+    Args:
+        contributions: Ranked contributions from :meth:`ShapExplainer.explain_row`.
+        probability: Calibrated probability of default.
+        risk_band: ``"Low"``, ``"Medium"`` or ``"High"``.
+        decision: The recommended action.
+        max_reasons: How many drivers to name per direction.
+
+    Returns:
+        A short paragraph. Never asserts a cause beyond the model's own
+        attribution -- these are the features that moved *this* score, which is
+        not the same as a claim about why the applicant behaves as they do.
+    """
+    if not contributions:
+        return (
+            f"This applicant scores {100 * probability:.1f}% probability of default "
+            f"({risk_band} risk). No individual feature explanation is available."
+        )
+
+    raising = [c for c in contributions if c.contribution > 0][:max_reasons]
+    lowering = [c for c in contributions if c.contribution < 0][:max_reasons]
+
+    opening = (
+        f"This applicant has a {100 * probability:.1f}% estimated probability of default, "
+        f"placing them in the **{risk_band}** risk band. Recommended action: {decision.lower()}."
+    )
+
+    parts = [opening]
+    if raising:
+        clauses = [c.as_sentence() for c in raising]
+        joined = clauses[0] if len(clauses) == 1 else ", ".join(clauses[:-1]) + f", and {clauses[-1]}"
+        parts.append(f"The main factors increasing risk are that {joined}.")
+    if lowering:
+        clauses = [c.as_sentence() for c in lowering]
+        joined = clauses[0] if len(clauses) == 1 else ", ".join(clauses[:-1]) + f", and {clauses[-1]}"
+        parts.append(f"Working in their favour: {joined}.")
+
+    parts.append(
+        "These are the factors that moved this particular score, ranked by how much "
+        "each one shifted it."
+    )
+    return " ".join(parts)

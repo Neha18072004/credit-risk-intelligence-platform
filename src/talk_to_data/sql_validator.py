@@ -21,7 +21,9 @@ The layered defences, in order:
 4. Function blacklist: file, network and sleep primitives.
 5. Schema whitelist: every table and column must exist in the live database.
 6. Row cap: a ``LIMIT`` is injected or tightened.
-7. Re-serialisation from the tree.
+7. Deterministic repair of dialect mistakes the model repeats (see
+   :func:`_cast_round_arguments`).
+8. Re-serialisation from the tree.
 
 A read-only database role and a server-side statement timeout sit behind all of
 this, so a bypass of any single layer is still not sufficient to cause harm.
@@ -73,6 +75,42 @@ SUSPICIOUS_PATTERN: Final[re.Pattern[str]] = re.compile(
 _FENCE_PATTERN: Final[re.Pattern[str]] = re.compile(
     r"^\s*```(?:sql)?\s*(.*?)\s*```\s*$", re.DOTALL | re.IGNORECASE
 )
+
+
+def _cast_round_arguments(tree: exp.Expression) -> int:
+    """Wrap two-argument ``ROUND`` inputs in ``CAST(... AS NUMERIC)``, in place.
+
+    PostgreSQL has no ``ROUND(double precision, integer)`` -- it exists only for
+    ``numeric`` -- so rounding an average of a FLOAT column to two decimal
+    places fails at execution even though the statement is perfectly valid to
+    the parser.
+
+    This is fixed here rather than in the prompt because a prompt instruction is
+    advisory. The rule was added to the system prompt and demonstrated in a
+    worked example, and the model still reverted to the uncast form once the
+    conversation had a few turns of history in front of it. A deterministic
+    rewrite cannot be ignored.
+
+    The cast is applied unconditionally: casting an integer expression to
+    numeric is a no-op in both PostgreSQL and SQLite, so there is no need to
+    infer the argument's type.
+
+    Args:
+        tree: Parsed statement, mutated in place.
+
+    Returns:
+        How many calls were rewritten, for the caller to report as a warning.
+    """
+    rewritten = 0
+    for node in tree.find_all(exp.Round):
+        if node.args.get("decimals") is None:
+            continue  # single-argument ROUND is fine on any type
+        inner = node.this
+        if inner is None or isinstance(inner, exp.Cast):
+            continue
+        node.set("this", exp.Cast(this=inner, to=exp.DataType.build("NUMERIC")))
+        rewritten += 1
+    return rewritten
 
 
 def _strip_comments(tree: exp.Expression) -> None:
@@ -210,7 +248,10 @@ class SQLValidator:
         if not schema_check.is_valid:
             return schema_check
 
-        # --- 7. strip comments, apply the row cap, re-serialise from the tree ---
+        # --- 7. deterministic repairs the model keeps getting wrong ---
+        round_casts = _cast_round_arguments(tree)
+
+        # --- 8. strip comments, apply the row cap, re-serialise from the tree ---
         # sqlglot attaches comments to nodes and re-emits them, so a round trip
         # alone does not remove them. They are inert (stacked statements are
         # already rejected, so a comment cannot smuggle execution), but stripping
@@ -223,12 +264,18 @@ class SQLValidator:
         except Exception as error:  # noqa: BLE001
             return self._reject(f"Could not safely rewrite the query: {error}")
 
+        warnings = list(schema_check.warnings)
+        if round_casts:
+            warnings.append(
+                f"Added a NUMERIC cast to {round_casts} ROUND() call(s) for PostgreSQL."
+            )
+
         return ValidationResult(
             is_valid=True,
             sql=safe_sql,
             tables=schema_check.tables,
             columns=schema_check.columns,
-            warnings=schema_check.warnings,
+            warnings=warnings,
             limit_applied=limit_applied,
         )
 

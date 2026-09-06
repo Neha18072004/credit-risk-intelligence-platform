@@ -326,10 +326,35 @@ band hid its own upper end. Band edges must bound the marginal applicant.
 
 Two explanations for two audiences, from one pipeline.
 
-**SHAP — why *this* applicant.** Signed per-feature contributions in log-odds,
-rendered as a diverging chart and a ranked table. The explainer dispatches on
-model family: CatBoost's native exact `ShapValues`, LightGBM's `TreeExplainer`,
-or exact linear Shapley values for the logistic pipeline.
+**SHAP — why *this* applicant.** Signed per-feature contributions, rendered as a
+diverging chart, a ranked table, and — the part that matters for a decision
+someone has to justify — a plain-English paragraph:
+
+> This applicant has a 99.9% estimated probability of default, placing them in
+> the **High** risk band. Recommended action: refer for review. The main factors
+> increasing risk are that their average external credit score of 0.309 raises
+> the risk, their combined external credit score of 0.000103 raises the risk,
+> and their instalment-to-income ratio of 37% raises the risk.
+
+A ranked table of log-odds is an explanation for a modeller. An applicant who
+has been referred is entitled to something they can act on, and a credit officer
+needs to be able to say the reason out loud. Both explanation surfaces — SHAP
+and the policy rules — draw their vocabulary from one shared module
+(`src/xai/feature_labels.py`), so `BUREAU_DEBT_CREDIT_RATIO = 0.59` is always
+rendered as "share of external credit still unpaid = 59%" and the two can never
+describe the same feature differently. Raw SHAP values remain available in the
+table for anyone who wants them.
+
+The explainer dispatches on model family: CatBoost's native exact `ShapValues`,
+LightGBM's `TreeExplainer`, or exact linear Shapley values for the logistic
+pipeline.
+
+**No prediction claims certainty.** Isotonic calibration returns exactly 0 and 1
+wherever a calibration bin was pure, which produced explanations asserting a
+"100.0% probability of default" — not something a lender could defend from a
+finite sample. Calibrated probabilities are bounded to [0.001, 0.999] wherever
+they are consumed, so the bands, the metrics and what an applicant is told all
+describe the same numbers.
 
 **Surrogate tree — what policy the model applies.** A depth-4 decision tree is
 fitted against **the model's own calibrated predictions** — not against the
@@ -343,6 +368,16 @@ RULE 4  --  covers 131 applicants (3.3% of the book)
   THEN predicted default risk 55.0%  ->  High risk band
        observed default rate in this group: 49.6%
 ```
+
+Sample of the exported rules table (full set in `reports/policy_rules.csv`):
+
+| Rule | Conditions | Predicted | Observed | Coverage | Band |
+|---|---|---|---|---|---|
+| 4 | external score ≤ 0.388 AND loan-to-income > 6.87 | 54.9% | 49.6% | 3.3% | High |
+| 3 | external score ≤ 0.388 AND loan-to-income ≤ 6.87 AND outstanding external debt > 408,000 | 41.7% | 42.4% | 2.1% | High |
+| 7 | external score 0.388–0.505 AND loan-to-income > 7.55 | 23.4% | 23.1% | 3.4% | Medium |
+| 8 | external score > 0.505 AND moderate leverage | 4.0% | 4.0% | 17.3% | Low |
+| 10 | external score > 0.505 AND low leverage AND no arrears | 1.8% | 0.9% | 25.7% | Low |
 
 **Fidelity is reported with every rule set** — R² 0.613, band agreement 78.2% —
 because a surrogate that does not track the model is worse than no surrogate: it
@@ -361,6 +396,25 @@ Ask in English; get an answer, the SQL behind it, and the rows.
 
 An LLM writes the SQL, so **the SQL is untrusted input**. Three independent
 layers make that acceptable, and each was tested by attacking it.
+
+### Verified query patterns
+
+Eight patterns, each covering a distinct *shape* of question. Every row below was
+run end-to-end against the PostgreSQL stack with the local model, in one
+conversation so later turns carried memory pressure:
+
+| # | Pattern | Question | Answer returned |
+|---|---|---|---|
+| 1 | Rate overall | "What is the overall default rate?" | 8.53% across 4,000 applicants |
+| 2 | Rate by segment | "Which education level has the highest default rate?" | Lower secondary, 16% |
+| 3 | Two-group comparison | "Compare average income between applicants who defaulted and those who repaid." | Repaid 177,000 vs defaulted 165,000 |
+| 4 | Banding a continuous column | "How does the default rate vary across external credit score bands?" | 30.12% → 13.62% → 5.61% → 0.97% |
+| 5 | Join to bureau | "Do applicants with prior arrears default more often?" | 13.28% with arrears vs 7.69% without |
+| 6 | Join to model output | "What does the model's risk banding look like, and is it accurate?" | Low 2.57% predicted / 2.57% actual, and so on per band |
+| 7 | Row-level ranking | "Show me the 5 riskiest applicants the model flagged for review." | Top 5 by risk score, with their loan and income |
+| 8 | Unanswerable | "What is the average credit card balance?" | Declines, naming the absent column |
+
+**Result: 8/8 handled correctly.**
 
 ### Layer 1 — the SQL validator (`sql_validator.py`)
 
@@ -395,6 +449,25 @@ an unknown column or a write. It is rejected anyway, because it makes a
 statement mean something other than what it appears to say and no legitimate
 generated query needs it. This layer fails closed by policy, not only where
 exploitability is proven.
+
+### Deterministic repair: where prompting was not enough
+
+PostgreSQL has no `ROUND(double precision, integer)` — it exists only for
+`numeric` — so rounding an average of a FLOAT column fails at execution even
+though the statement is perfectly valid to the parser.
+
+The instruction was added to the system prompt *and* demonstrated in a worked
+example, and the model still reverted to the uncast form once the conversation
+carried a few turns of history. A prompt instruction is advisory; the model is
+free to ignore it, and under context pressure it did.
+
+The validator now rewrites `ROUND(x, n)` to `ROUND(CAST(x AS NUMERIC), n)`
+during the re-serialisation it already performs. The cast is applied
+unconditionally, because casting an integer expression to numeric is a no-op on
+both backends, so no type inference is needed. **That is the general lesson: if
+a failure mode is deterministic, fix it deterministically rather than asking the
+model more firmly.** Before the rewrite this question failed even after two
+repair attempts; after it, the same conversation answers 8/8.
 
 ### Layer 2 — a read-only database role
 
@@ -462,7 +535,7 @@ so the model learns from a rejection instead of repeating it.
 
 ### Acceptance run
 
-7/7 questions handled correctly against `qwen2.5-coder:7b`, covering rate-by-
+8/8 questions handled correctly against `qwen2.5-coder:7b`, covering rate-by-
 segment, two-group comparison, banding, joins to model output, bureau joins,
 row-level ranking, and the refusal case.
 
@@ -493,6 +566,26 @@ Two rules were added in response to *observed* failures, not speculation:
 ---
 
 ## 10. Design decisions
+
+**Deviation from the suggested stack: a local LLM instead of a hosted API.**
+This is the one place the project departs from the obvious choice, so it is
+worth stating plainly rather than leaving to be inferred.
+
+| | Hosted API (OpenAI / Anthropic / Gemini) | Local Ollama (chosen) |
+|---|---|---|
+| Applicant data | Leaves the host | Never leaves the host |
+| Evaluator setup | Needs a key, an account, billing | None |
+| Runs offline | No | Yes |
+| Cost per question | Metered | Zero |
+| Answer quality | Higher | Sufficient — 8/8 patterns |
+| Latency | ~2s | ~15–30s on CPU |
+
+The trade is latency and some answer quality for **data residency and zero
+setup friction**, which for a credit-risk system handling personal financial
+records is the right way round. Nothing is lost by the choice: all four
+providers sit behind one interface, so `LLM_PROVIDER=openai` with a key
+switches to a hosted model without a code change, and every hallucination
+control applies identically whichever is selected.
 
 **Local LLM by default.** Talk-to-data sends schema context and query results —
 derived from real applicant records — to a model. Running it on-box means that
@@ -537,7 +630,7 @@ is not in the data.
 ## 11. Testing
 
 ```bash
-pytest -q          # 257 tests
+pytest -q          # 265 tests
 ```
 
 The whole suite runs with **no Kaggle data, no PostgreSQL server, no model
@@ -639,7 +732,7 @@ credit_risk_platform/
 │   └── utils/                     # config, logger, helpers, viz, docker_utils
 ├── sql/                           # schema + read-only role
 ├── docker/                        # entrypoint, db init
-├── tests/                         # 257 tests
+├── tests/                         # 265 tests
 ├── models/                        # gitignored artifacts
 ├── reports/                       # generated figures and metrics
 ├── Dockerfile

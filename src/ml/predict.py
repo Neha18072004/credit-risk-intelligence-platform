@@ -36,7 +36,7 @@ from src.ml.train import (
     THRESHOLDS_FILE,
 )
 from src.utils.config import settings
-from src.utils.helpers import probability_to_score, read_json
+from src.utils.helpers import bound_probability, probability_to_score, read_json
 from src.utils.logger import get_logger
 from src.xai.shap_explainer import FeatureContribution, ShapExplainer
 
@@ -57,6 +57,15 @@ class PredictionResult:
     applicant_id: int | None = None
     top_contributions: list[FeatureContribution] = field(default_factory=list)
 
+    @property
+    def explanation(self) -> str:
+        """Plain-English account of why this applicant scored as they did."""
+        from src.xai.shap_explainer import narrate_explanation
+
+        return narrate_explanation(
+            self.top_contributions, self.probability, self.risk_band, self.decision
+        )
+
     def to_dict(self) -> dict[str, Any]:
         """Flat, JSON-serialisable view for APIs and the UI."""
         return {
@@ -66,12 +75,16 @@ class PredictionResult:
             "risk_band": self.risk_band,
             "decision": self.decision,
             "decision_threshold": self.threshold,
+            "explanation": self.explanation,
             "top_contributions": [
                 {
                     "feature": c.feature,
+                    "label": c.label,
                     "value": c.value if not isinstance(c.value, np.generic) else c.value.item(),
+                    "display_value": c.display_value,
                     "contribution": round(c.contribution, 6),
                     "direction": c.direction,
+                    "strength": c.strength,
                 }
                 for c in self.top_contributions
             ],
@@ -188,7 +201,7 @@ def predict_batch(
     features = _prepare(frame, bundle)
 
     raw = bundle.model.predict_proba(features)[:, 1]
-    calibrated = np.clip(bundle.calibrator.predict(raw), 0.0, 1.0)
+    calibrated = bound_probability(bundle.calibrator.predict(raw))
     threshold = float(bundle.thresholds["decision_threshold"])
 
     identifiers = (

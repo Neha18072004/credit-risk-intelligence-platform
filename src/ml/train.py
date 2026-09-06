@@ -48,7 +48,7 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from src.data.loader import build_dataset, split_features_target
 from src.data.preprocessor import CreditPreprocessor
 from src.utils.config import settings
-from src.utils.helpers import write_json
+from src.utils.helpers import bound_probability, write_json
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -671,7 +671,7 @@ def train(save: bool = True, candidates: list[str] | None = None) -> dict[str, A
     final_model.fit(prepared, labels)
 
     calibrator = fit_calibrator(winner.oof_predictions, labels)
-    calibrated_oof = np.clip(calibrator.predict(winner.oof_predictions), 0.0, 1.0)
+    calibrated_oof = bound_probability(calibrator.predict(winner.oof_predictions))
     thresholds = tune_thresholds(calibrated_oof, labels)
 
     metrics = {

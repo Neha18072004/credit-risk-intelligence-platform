@@ -261,6 +261,7 @@ def render_predict(applicants: pd.DataFrame) -> None:
         result = predict_applicant(row, top_n=10)
 
     risk_card(result.probability, result.risk_score, result.risk_band, result.decision)
+    st.markdown(f"**Why:** {result.explanation}")
 
     thresholds = bundle.thresholds
     st.caption(
@@ -402,6 +403,8 @@ def render_explain(applicants: pd.DataFrame) -> None:
             result = predict_applicant(row, top_n=10)
 
         risk_card(result.probability, result.risk_score, result.risk_band, result.decision)
+        st.markdown(result.explanation)
+
         figure = plot_local_explanation(
             result.top_contributions, result.probability, result.applicant_id
         )
@@ -412,10 +415,13 @@ def render_explain(applicants: pd.DataFrame) -> None:
             pd.DataFrame(
                 [
                     {
-                        "feature": c.feature,
-                        "value": c.value,
+                        # Plain-English name and value first: this table is read
+                        # by credit officers, not only by modellers.
+                        "factor": c.label,
+                        "applicant's value": c.display_value,
                         "effect": c.direction,
-                        "contribution": round(c.contribution, 4),
+                        "strength": c.strength,
+                        "SHAP (log-odds)": round(c.contribution, 4),
                     }
                     for c in result.top_contributions
                 ]
@@ -423,8 +429,9 @@ def render_explain(applicants: pd.DataFrame) -> None:
             use_container_width=True, hide_index=True,
         )
         st.caption(
-            "Contributions are in log-odds. Positive pushes the applicant towards default, "
-            "negative away from it; they sum to the model's output for this applicant."
+            "Strength summarises the size of each effect. The final column is the raw SHAP "
+            "value in log-odds for anyone who wants it: positive pushes towards default, "
+            "negative away from it, and they sum to the model's output for this applicant."
         )
 
     with global_tab:

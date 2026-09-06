@@ -260,3 +260,37 @@ def test_cte_may_not_shadow_a_real_table(validator: SQLValidator) -> None:
         "WITH banded AS (SELECT risk_band FROM predictions) "
         "SELECT risk_band, COUNT(*) FROM banded GROUP BY risk_band"
     ).is_valid
+
+
+def test_round_arguments_are_cast_for_postgres(validator: SQLValidator) -> None:
+    """PostgreSQL has no ROUND(double precision, int); the validator repairs it.
+
+    Fixed deterministically rather than by prompt instruction. The rule was in
+    the system prompt and demonstrated in a worked example, and the model still
+    reverted to the uncast form once the conversation carried a few turns of
+    history -- so the rewrite happens where it cannot be ignored.
+    """
+    result = validator.validate(
+        "SELECT risk_band, ROUND(AVG(probability_of_default) * 100, 2) AS pct "
+        "FROM predictions GROUP BY risk_band"
+    )
+    assert result.is_valid
+    assert "CAST(" in result.sql.upper()
+    assert any("NUMERIC cast" in warning for warning in result.warnings)
+
+
+def test_existing_casts_are_left_alone(validator: SQLValidator) -> None:
+    result = validator.validate(
+        "SELECT ROUND(AVG(probability_of_default)::numeric, 2) AS pct FROM predictions"
+    )
+    assert result.is_valid
+    # Exactly one cast: the one the author wrote.
+    assert result.sql.upper().count("CAST(") <= 1
+    assert not any("NUMERIC cast" in warning for warning in result.warnings)
+
+
+def test_single_argument_round_is_untouched(validator: SQLValidator) -> None:
+    """ROUND(x) works on any numeric type and needs no repair."""
+    result = validator.validate("SELECT ROUND(amt_income_total) AS r FROM applications")
+    assert result.is_valid
+    assert not any("NUMERIC cast" in warning for warning in result.warnings)
