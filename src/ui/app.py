@@ -277,10 +277,15 @@ def render_predict(applicants: pd.DataFrame) -> None:
             "NAME_EDUCATION_TYPE", "NAME_INCOME_TYPE", "NAME_FAMILY_STATUS",
             "EXT_SOURCE_1", "EXT_SOURCE_2", "EXT_SOURCE_3", "BUREAU_HAS_OVERDUE",
         ]
+        present = [field for field in fields if field in display.index]
         st.dataframe(
             pd.DataFrame(
-                {"field": [f for f in fields if f in display.index],
-                 "value": [display[f] for f in fields if f in display.index]}
+                {
+                    "field": present,
+                    # Rendered as text: the column mixes strings and floats, and
+                    # Arrow cannot type a mixed column without coercing it.
+                    "value": [_render_value(display[field]) for field in present],
+                }
             ),
             use_container_width=True, hide_index=True,
         )
@@ -289,6 +294,17 @@ def render_predict(applicants: pd.DataFrame) -> None:
         "See **Explain** for why this applicant scored as they did, and **Rules** for the "
         "policy the model applies across the whole book."
     )
+
+
+def _render_value(value: Any) -> str:
+    """Format one applicant field for display."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return "not provided"
+    if isinstance(value, float):
+        return f"{value:,.4g}"
+    if isinstance(value, (int,)):
+        return f"{value:,}"
+    return str(value)
 
 
 def _manual_applicant_form(applicants: pd.DataFrame) -> pd.DataFrame | None:

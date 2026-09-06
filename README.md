@@ -108,8 +108,11 @@ database, which includes the model's own predictions as a table.
 git clone <repository-url>
 cd credit_risk_platform
 cp .env.example .env          # optional: the defaults work as-is
-docker-compose up
+docker compose up             # or: docker-compose up
 ```
+
+> Compose v2 ships as `docker compose`; the hyphenated `docker-compose` works
+> too where the v1 shim is installed. Either form is fine throughout this README.
 
 Open **http://localhost:8501**.
 
