@@ -379,8 +379,19 @@ model's string, so anything the parser did not represent cannot survive. Comment
 are the exception worth naming — sqlglot *retains* them on nodes and re-emits
 them, so they are stripped explicitly rather than assumed away.
 
-Result: **18 attacks attempted, 0 leaks, 0 false rejections** on 8 legitimate
-queries.
+Result: **33 attacks attempted, 0 leaks, 0 false rejections** on legitimate
+queries. The attack set covers stacked statements, comment-hidden statements,
+writes buried in CTEs, system-catalog and `information_schema` access, UNION
+exfiltration, schema-qualified dangerous functions, case-mangled DDL, `COPY TO`,
+`SET ROLE`, and hallucinated tables and columns.
+
+One finding worth recording: a CTE that *shadows* a real table name
+(`WITH applications AS (...)`) turned out **not** to be an escape — the CTE body
+is still fully validated, so a shadowed name cannot smuggle in a catalog table,
+an unknown column or a write. It is rejected anyway, because it makes a
+statement mean something other than what it appears to say and no legitimate
+generated query needs it. This layer fails closed by policy, not only where
+exploitability is proven.
 
 ### Layer 2 — a read-only database role
 
@@ -510,7 +521,7 @@ is not in the data.
 ## 11. Testing
 
 ```bash
-pytest -q          # 231 tests
+pytest -q          # 246 tests
 ```
 
 The whole suite runs with **no Kaggle data, no PostgreSQL server, no model
@@ -519,7 +530,7 @@ nothing but Python.
 
 | Area | Focus |
 |---|---|
-| `test_sql_validator.py` | 37 tests, mostly adversarial — every one asserts something unsafe is refused |
+| `test_sql_validator.py` | 51 tests, mostly adversarial — every one asserts something unsafe is refused |
 | `test_talk_to_data.py` | End-to-end query patterns, grounding checks, memory bounds, repair loop |
 | `test_train.py` | Selection logic, calibration, threshold tuning |
 | `test_xai.py` | Surrogate fidelity; rules must track the model |
@@ -612,7 +623,7 @@ credit_risk_platform/
 │   └── utils/                     # config, logger, helpers, viz, docker_utils
 ├── sql/                           # schema + read-only role
 ├── docker/                        # entrypoint, db init
-├── tests/                         # 231 tests
+├── tests/                         # 246 tests
 ├── models/                        # gitignored artifacts
 ├── reports/                       # generated figures and metrics
 ├── Dockerfile

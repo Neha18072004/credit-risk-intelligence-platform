@@ -203,3 +203,60 @@ def test_validator_uses_live_schema(live_schema) -> None:
     validator = SQLValidator(live_schema, max_rows=50)
     assert validator.validate("SELECT COUNT(*) FROM applications").is_valid
     assert not validator.validate("SELECT COUNT(*) FROM nonexistent_table").is_valid
+
+
+# ------------------------------------------------- advanced adversarial ----
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT * FROM pg_catalog.pg_user",
+        "SELECT sk_id_curr FROM applications UNION SELECT usename FROM pg_user",
+        "SELECT table_name FROM information_schema.tables",
+        "SELECT sk_id_curr FROM applications WHERE sk_id_curr IN (SELECT id FROM secrets)",
+        "SELECT pg_catalog.pg_read_file('/etc/passwd')",
+        "DrOp TaBlE applications",
+        "dElEtE FrOm applications",
+        "COPY applications TO '/tmp/out.csv'",
+        "SET ROLE postgres",
+        "WITH u AS (UPDATE applications SET target = 0 RETURNING *) SELECT * FROM u",
+        "SELECT 1 FROM applications\n;\nDROP TABLE applications",
+        "SELECT (SELECT ssn FROM applications) FROM applications",
+    ],
+    ids=[
+        "catalog-table", "union-to-catalog", "information-schema", "unknown-subquery-table",
+        "schema-qualified-function", "case-mangled-drop", "mixed-case-delete", "copy-to-file",
+        "set-role", "update-in-cte", "newline-stacked", "nested-unknown-column",
+    ],
+)
+def test_advanced_attacks_are_rejected(validator: SQLValidator, sql: str) -> None:
+    result = validator.validate(sql)
+    assert not result.is_valid, f"leaked: {result.sql}"
+
+
+def test_cte_body_is_validated_like_any_other_query(validator: SQLValidator) -> None:
+    """A CTE is not a blind spot -- its body goes through every check."""
+    for sql in (
+        "WITH x AS (SELECT * FROM pg_user) SELECT * FROM x",
+        "WITH x AS (SELECT * FROM secrets) SELECT * FROM x",
+        "WITH x AS (SELECT ssn FROM applications) SELECT * FROM x",
+    ):
+        assert not validator.validate(sql).is_valid
+
+
+def test_cte_may_not_shadow_a_real_table(validator: SQLValidator) -> None:
+    """Rejected on fail-closed grounds, not because it is exploitable.
+
+    Probing showed shadowing is not an escape: the CTE body is still validated,
+    so a shadowed name cannot smuggle in a catalog table, an unknown column or a
+    write. It is refused because it makes a statement mean something other than
+    what it appears to say, and no legitimate generated query needs it.
+    """
+    result = validator.validate("WITH applications AS (SELECT 1 AS x) SELECT x FROM applications")
+    assert not result.is_valid
+    assert "applications" in result.reason
+
+    # A CTE with its own name remains perfectly acceptable.
+    assert validator.validate(
+        "WITH banded AS (SELECT risk_band FROM predictions) "
+        "SELECT risk_band, COUNT(*) FROM banded GROUP BY risk_band"
+    ).is_valid

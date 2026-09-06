@@ -254,6 +254,19 @@ class SQLValidator:
             cte.alias_or_name.lower() for cte in tree.find_all(exp.CTE) if cte.alias_or_name
         }
 
+        # A CTE that shadows a real table is refused. Testing confirmed it is
+        # not an escape -- the CTE body is still fully validated, so a shadowed
+        # name cannot smuggle in a catalog table, an unknown column or a write.
+        # It is rejected anyway because it makes a statement mean something
+        # different from what it appears to say, no legitimate generated query
+        # needs it, and this layer fails closed by policy.
+        shadowed = cte_names & set(self.schema)
+        if shadowed:
+            return self._reject(
+                f"A CTE may not reuse the name of a real table: {', '.join(sorted(shadowed))}. "
+                "Rename the CTE."
+            )
+
         referenced: set[str] = set()
         alias_map: dict[str, str] = {}
         for table in tree.find_all(exp.Table):
