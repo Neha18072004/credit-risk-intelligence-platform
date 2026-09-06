@@ -130,7 +130,10 @@ def engineer_features(frame: pd.DataFrame) -> pd.DataFrame:
     # ------------------------------------------------ external score block --
     available = [column for column in EXT_SOURCE_COLUMNS if column in df.columns]
     if available:
-        ext = df[available]
+        # Coerce explicitly: a single applicant arriving as a Series transposes
+        # into object-dtype columns, on which the aggregates below would be both
+        # slow and silently wrong.
+        ext = df[available].apply(pd.to_numeric, errors="coerce")
         new_columns["EXT_SOURCE_MEAN"] = ext.mean(axis=1)
         new_columns["EXT_SOURCE_MIN"] = ext.min(axis=1)
         new_columns["EXT_SOURCE_MAX"] = ext.max(axis=1)

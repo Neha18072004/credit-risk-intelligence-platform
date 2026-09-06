@@ -396,12 +396,41 @@ def _draw_target(
     # block in the whole feature set, so the fixture has to reproduce its
     # direction: arrears and high outstanding leverage raise risk, and a thin
     # file (no external history at all) carries its own modest penalty.
+    thin_file = np.zeros(len(df))
     if bureau_drivers is not None:
+        thin_file = bureau_drivers["_THIN_FILE"].to_numpy()
         logit = logit + (
             0.90 * bureau_drivers["_HAS_OVERDUE"].to_numpy()
             + 0.45 * z(bureau_drivers["_DEBT_RATIO"].to_numpy())
-            + 0.25 * bureau_drivers["_THIN_FILE"].to_numpy()
+            + 0.25 * thin_file
         )
+
+    # ---------------------------------------------------------------------
+    # Non-linearities and interactions.
+    #
+    # Real credit risk is not linear in the logit of standardised features, and
+    # a fixture that pretends otherwise would be rigged in favour of the linear
+    # baseline -- it would make the bake-off meaningless, since logistic
+    # regression would be the correctly specified model by construction. Each
+    # term below is a documented phenomenon in retail credit scoring.
+    # ---------------------------------------------------------------------
+    z_ext = z(ext_mean)
+    z_leverage = z(credit_to_income)
+
+    # Leverage bites hardest when the external score is already weak: the two
+    # weaknesses compound rather than add.
+    logit = logit + 0.50 * (z_ext < -0.5) * np.clip(z_leverage, 0, None)
+
+    # Scorecard cliff: risk deteriorates sharply below a score floor rather than
+    # sliding smoothly, which is why lenders set hard score cut-offs.
+    logit = logit + 0.55 * (ext_mean < np.nanquantile(ext_mean, 0.15))
+
+    # Age risk is U-shaped, not monotone: the youngest borrowers are the
+    # riskiest, risk falls through middle age, then flattens.
+    logit = logit + 0.40 * np.clip((30.0 - age_years) / 10.0, 0, None)
+
+    # A thin file is tolerable at low leverage and dangerous at high leverage.
+    logit = logit + 0.45 * thin_file * (z_leverage > 0.5)
 
     # Bisect on the intercept until the mean probability matches the target rate.
     low, high = -12.0, 6.0

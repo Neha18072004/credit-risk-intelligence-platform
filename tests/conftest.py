@@ -59,3 +59,19 @@ def fitted_preprocessor(joined_dataset):
 def feature_matrix(fitted_preprocessor, joined_dataset):
     """The model-ready feature frame produced from the sample data."""
     return fitted_preprocessor.transform(joined_dataset)
+
+
+@pytest.fixture(scope="session")
+def trained_artifacts(joined_dataset):
+    """Train the full bake-off once and persist artifacts for the session.
+
+    Saving to disk is required because :func:`src.ml.predict.load_bundle` is the
+    real inference path and reads from ``models/``. Artifacts are gitignored and
+    fully regenerable, so overwriting them is harmless.
+    """
+    from src.ml import train as train_module
+    from src.ml.predict import load_bundle
+
+    outcome = train_module.train(save=True)
+    load_bundle.cache_clear()  # pick up the artifacts just written
+    return outcome
