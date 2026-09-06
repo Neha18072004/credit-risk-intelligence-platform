@@ -30,7 +30,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Final
 
-PROMPT_VERSION: Final[str] = "1.4.0"
+PROMPT_VERSION: Final[str] = "1.5.0"
 
 # --------------------------------------------------------------------------- #
 # Schema description
@@ -154,7 +154,7 @@ FEW_SHOT_EXAMPLES: Final[tuple[FewShotExample, ...]] = (
         sql=(
             "SELECT p.risk_band,\n"
             "       COUNT(*) AS applicants,\n"
-            "       ROUND(AVG(p.probability_of_default) * 100, 2) AS predicted_default_pct,\n"
+            "       ROUND(AVG(p.probability_of_default)::numeric * 100, 2) AS predicted_default_pct,\n"
             "       ROUND(AVG(a.target) * 100, 2) AS actual_default_pct\n"
             "FROM predictions p\n"
             "JOIN applications a ON a.sk_id_curr = p.sk_id_curr\n"
@@ -162,7 +162,10 @@ FEW_SHOT_EXAMPLES: Final[tuple[FewShotExample, ...]] = (
             "GROUP BY p.risk_band\n"
             "ORDER BY predicted_default_pct"
         ),
-        teaches="joining model output to outcomes; compare predicted against actual",
+        teaches=(
+            "joining model output to outcomes; and the ::numeric cast that ROUND "
+            "requires on a float column"
+        ),
     ),
     FewShotExample(
         question="Do applicants with prior arrears default more often?",
@@ -230,6 +233,9 @@ ROUND(AVG(target) * 100, 2). Always add WHERE target IS NOT NULL.
 - days_credit is a negative offset in days; credit_day_overdue is a positive \
 number of days past due.
 - Round money to whole units and rates to 2 decimal places.
+- PostgreSQL has no ROUND(double precision, int). When rounding a FLOAT column \
+to decimal places, cast first: ROUND(AVG(ext_source_mean)::numeric, 2). Columns \
+typed INT or SMALLINT (such as target) need no cast.
 - Give every computed column a readable alias.
 - Add LIMIT for row-level questions; aggregates do not need one."""
 

@@ -152,17 +152,69 @@ def build_tables(include_predictions: bool = False) -> dict[str, pd.DataFrame]:
 
 
 def _build_predictions(joined: pd.DataFrame) -> pd.DataFrame:
-    """Score every applicant with the trained model, if one exists."""
-    from src.ml.predict import artifacts_exist, score_frame
+    """Score every applicant, preferring out-of-fold predictions.
 
+    This matters for honesty, not just tidiness. These rows are the *training*
+    applicants, so scoring them with the final model gives in-sample
+    predictions, and the model separates its own training data far better than
+    it separates new data. A user asking the chat "is the model's banding
+    accurate?" would get a flattering answer -- in testing, the Low band showed
+    a 0.13% actual default rate against 2.55% predicted, which says more about
+    overfitting than about calibration.
+
+    ``src.ml.train`` saves the out-of-fold predictions, where every row was
+    scored by a model that never saw it. Those are used when their length
+    matches, and the table falls back to in-sample scoring with a warning
+    otherwise.
+
+    Args:
+        joined: The applicant dataset, in loader order.
+
+    Returns:
+        The predictions table.
+    """
+    import numpy as np
+
+    from src.ml.predict import artifacts_exist, assign_band, load_bundle, score_frame
+    from src.utils.helpers import probability_to_score
+
+    empty = pd.DataFrame(
+        columns=["sk_id_curr", "probability_of_default", "risk_score", "risk_band", "decision"]
+    )
     if not artifacts_exist():
         logger.warning("No trained model found; predictions table will be empty")
-        return pd.DataFrame(
-            columns=["sk_id_curr", "probability_of_default", "risk_score", "risk_band", "decision"]
+        return empty
+
+    oof_path = settings.models_dir / "oof_calibrated.npy"
+    if oof_path.exists():
+        probabilities = np.load(oof_path)
+        # The OOF array is aligned to the training frame's row order; a length
+        # mismatch means the model was trained on a different dataset.
+        if len(probabilities) == len(joined):
+            bundle = load_bundle()
+            threshold = float(bundle.thresholds["decision_threshold"])
+            logger.info("Using out-of-fold predictions for the predictions table")
+            return pd.DataFrame(
+                {
+                    "sk_id_curr": joined["SK_ID_CURR"].to_numpy(),
+                    "probability_of_default": probabilities,
+                    "risk_score": probability_to_score(probabilities),
+                    "risk_band": [assign_band(p, bundle.thresholds) for p in probabilities],
+                    "decision": [
+                        "Refer for review" if p >= threshold else "Approve" for p in probabilities
+                    ],
+                }
+            )
+        logger.warning(
+            "Out-of-fold predictions cover %d rows but the dataset has %d; "
+            "falling back to in-sample scoring", len(probabilities), len(joined),
         )
 
-    scored = score_frame(joined)
-    scored = scored.rename(columns={"SK_ID_CURR": "sk_id_curr"})
+    logger.warning(
+        "No out-of-fold predictions available; the predictions table will hold in-sample "
+        "scores, which overstate how well the model separates unseen applicants"
+    )
+    scored = score_frame(joined).rename(columns={"SK_ID_CURR": "sk_id_curr"})
     scored["risk_band"] = scored["risk_band"].astype(str)
     return scored[
         ["sk_id_curr", "probability_of_default", "risk_score", "risk_band", "decision"]

@@ -6,6 +6,8 @@ verifiable with no database server and no model runtime.
 
 from __future__ import annotations
 
+import re
+
 import pandas as pd
 import pytest
 
@@ -286,6 +288,52 @@ def test_few_shot_examples_are_all_valid_sql(live_schema) -> None:
         assert result.is_valid, f"few-shot '{example.question}' is invalid: {result.reason}"
 
 
+def test_few_shot_examples_avoid_round_on_uncast_floats() -> None:
+    """ROUND(double precision, int) does not exist in PostgreSQL.
+
+    Regression test for a real failure: one worked example rounded
+    AVG(probability_of_default) -- a DOUBLE PRECISION column -- to two decimal
+    places without a ::numeric cast. It parsed cleanly, validated cleanly, ran
+    fine on SQLite, and failed on the actual database. The model had faithfully
+    imitated the broken pattern.
+
+    The columns below are FLOAT in the schema; rounding any of them to decimal
+    places requires an explicit cast.
+    """
+    float_columns = (
+        "probability_of_default", "risk_score", "ext_source_mean", "ext_source_1",
+        "ext_source_2", "ext_source_3", "amt_income_total", "amt_credit",
+        "amt_annuity", "credit_to_income_ratio", "annuity_to_income_ratio",
+        "bureau_debt_credit_ratio", "age_years", "employed_years",
+    )
+    pattern = re.compile(r"ROUND\s*\(([^()]*(?:\([^()]*\))?[^()]*),\s*-?\d+\s*\)", re.IGNORECASE)
+
+    for example in FEW_SHOT_EXAMPLES:
+        for expression in pattern.findall(example.sql):
+            if "::numeric" in expression.lower():
+                continue
+            offending = [column for column in float_columns if column in expression.lower()]
+            assert not offending, (
+                f"few-shot '{example.question}' rounds float column(s) {offending} "
+                f"without a ::numeric cast: ROUND({expression.strip()}, n)"
+            )
+
+
+@pytest.mark.parametrize("example", FEW_SHOT_EXAMPLES, ids=lambda e: e.question[:40])
+def test_few_shot_examples_actually_execute(example, live_schema, analytics_db) -> None:
+    """Executing each example, not merely parsing it.
+
+    The earlier version only validated syntax, which is why a statement that
+    PostgreSQL refuses sat in the prompt undetected.
+    """
+    validator = SQLValidator(live_schema, max_rows=200)
+    validation = validator.validate(example.sql)
+    assert validation.is_valid, validation.reason
+
+    result = execute_sql(validation.sql, engine=analytics_db)
+    assert result.success, f"'{example.question}' failed to execute: {result.error}"
+
+
 # --------------------------------------------------------- orchestration --
 def _interface(fake_llm, responses, live_schema, monkeypatch, analytics_db):
     """Build a TalkToData wired to a scripted model and the test database."""
@@ -333,6 +381,52 @@ def test_ask_repairs_after_a_rejection(fake_llm, live_schema, monkeypatch, analy
     assert len(client.generation_calls) == 2
     # The rejection reason must actually reach the model.
     assert "credit_score" in client.generation_calls[1][1]
+
+
+def test_ask_repairs_after_a_database_error(
+    fake_llm, live_schema, monkeypatch, analytics_db
+) -> None:
+    """A query can be valid to the parser and still be refused by the server.
+
+    Regression test: PostgreSQL rejected ROUND(double precision, int) on a
+    statement that passed every validation check, and the repair loop -- which
+    only retried on validation failure -- had no recovery path.
+    """
+    client = fake_llm(
+        [
+            "SELECT AVG(ext_source_mean) AS m FROM applications",   # server refuses
+            "SELECT AVG(ext_source_mean) AS m FROM applications",   # repaired
+        ]
+    )
+    from src.talk_to_data import nl_to_sql as module
+    from src.talk_to_data.query_runner import QueryResult
+
+    # The first execution is failed deliberately. Crafting SQL that PostgreSQL
+    # refuses but SQLite accepts would make the test depend on dialect quirks;
+    # what is under test is the recovery path, not the specific error.
+    calls = {"n": 0}
+
+    def flaky_execute(sql: str) -> QueryResult:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return QueryResult(
+                success=False, sql=sql,
+                error="function round(double precision, integer) does not exist",
+            )
+        return execute_sql(sql, engine=analytics_db)
+
+    monkeypatch.setattr(module, "execute_sql", flaky_execute)
+    interface = TalkToData(
+        client=client, validator=SQLValidator(live_schema, max_rows=200),
+        memory=ConversationMemory(),
+    )
+    result = interface.ask("How many applicants?")
+    assert result.success
+    assert result.repair_attempted
+    assert len(client.generation_calls) == 2
+    # The database's own message must reach the model.
+    assert "database rejected it" in client.generation_calls[1][1]
+    assert "round(double precision, integer)" in client.generation_calls[1][1]
 
 
 def test_ask_gives_up_after_one_repair(fake_llm, live_schema, monkeypatch, analytics_db) -> None:

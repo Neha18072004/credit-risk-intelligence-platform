@@ -440,6 +440,19 @@ retried. An admitted gap beats an invented column:
 > I can't answer that from the available data. There is no column in the schema
 > that represents a credit card balance.
 
+### A note on the `predictions` table
+
+It holds **out-of-fold** predictions, not the final model's scores on its own
+training data. That distinction changes the answer to a question users actually
+ask. Scored in-sample, the Low band showed a 0.13% actual default rate against
+2.55% predicted — which measures overfitting, not calibration. With out-of-fold
+predictions the same query returns 2.57% predicted against 2.57% actual.
+
+That exact agreement is itself a consequence of the calibration caveat noted
+above: the isotonic calibrator was fitted on these same out-of-fold predictions,
+so binned means agree by construction. It is the honest number available without
+a held-out set, and it is worth knowing why it looks as clean as it does.
+
 ### Conversation memory
 
 Follow-ups need history ("and for women?"), but history is re-sent every turn, so
@@ -524,7 +537,7 @@ is not in the data.
 ## 11. Testing
 
 ```bash
-pytest -q          # 246 tests
+pytest -q          # 256 tests
 ```
 
 The whole suite runs with **no Kaggle data, no PostgreSQL server, no model
@@ -626,7 +639,7 @@ credit_risk_platform/
 │   └── utils/                     # config, logger, helpers, viz, docker_utils
 ├── sql/                           # schema + read-only role
 ├── docker/                        # entrypoint, db init
-├── tests/                         # 246 tests
+├── tests/                         # 256 tests
 ├── models/                        # gitignored artifacts
 ├── reports/                       # generated figures and metrics
 ├── Dockerfile

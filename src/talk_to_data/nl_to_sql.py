@@ -14,10 +14,14 @@ The flow, and what each step defends against:
    is the cheapest hallucination control available: an admitted gap beats an
    invented column.
 5. **Validation** rejects anything unsafe or ungrounded.
-6. **One repair attempt** -- the rejection reason is fed back for a single
-   retry. Models fix a named unknown column reliably; a second retry mostly
-   burns tokens, so the loop is capped at one.
-7. **Execution** on a read-only connection with a statement timeout.
+6. **One repair attempt** -- the failure reason is fed back for a single retry.
+   Models fix a named unknown column reliably; a second retry mostly burns
+   tokens, so the loop is capped at one.
+7. **Execution** on a read-only connection with a statement timeout. A database
+   error also earns a repair attempt: a query can be perfectly valid to the
+   parser and still fail on the server -- PostgreSQL rejecting
+   ``ROUND(double precision, int)`` is the case that motivated this -- and the
+   error text names the fix precisely enough for the model to apply it.
 8. **Summarisation** strictly from the returned rows.
 9. **Recording** the turn into memory, successes and failures alike.
 """
@@ -210,31 +214,32 @@ class TalkToData:
                 return result
 
             validation = self.validator.validate(raw)
-            if validation.is_valid:
-                result.sql = validation.sql
-                result.validation_warnings = validation.warnings
-                result.tables_used = validation.tables
-                break
+            if not validation.is_valid:
+                last_reason = feedback = validation.reason
+                logger.info("Attempt %d rejected by the validator: %s", attempt + 1, validation.reason)
+                continue
 
-            last_reason = validation.reason
-            feedback = validation.reason
-            logger.info("Attempt %d rejected: %s", attempt + 1, validation.reason)
+            execution = execute_sql(validation.sql)
+            if not execution.success:
+                # Valid to the parser, refused by the server. The database's own
+                # message is usually specific enough to repair from.
+                last_reason = execution.error
+                feedback = f"The query was valid but the database rejected it: {execution.error}"
+                logger.info("Attempt %d failed at execution: %s", attempt + 1, execution.error)
+                continue
+
+            result.sql = validation.sql
+            result.validation_warnings = validation.warnings
+            result.tables_used = validation.tables
+            result.rows = execution.rows
+            result.row_count = execution.row_count
+            result.success = True
+            break
         else:
-            result.error = f"Could not produce a valid query. {last_reason}"
+            result.error = f"Could not produce a working query. {last_reason}"
             result.elapsed_seconds = time.perf_counter() - started
             self.memory.record(question, succeeded=False, error=result.error)
             return result
-
-        execution = execute_sql(result.sql)
-        if not execution.success:
-            result.error = execution.error
-            result.elapsed_seconds = time.perf_counter() - started
-            self.memory.record(question, sql=result.sql, succeeded=False, error=execution.error)
-            return result
-
-        result.rows = execution.rows
-        result.row_count = execution.row_count
-        result.success = True
 
         if summarise:
             result.answer, result.summary_source = summarise_result(
