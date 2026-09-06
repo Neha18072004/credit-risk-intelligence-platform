@@ -75,3 +75,89 @@ def trained_artifacts(joined_dataset):
     outcome = train_module.train(save=True)
     load_bundle.cache_clear()  # pick up the artifacts just written
     return outcome
+
+
+@pytest.fixture(scope="session")
+def analytics_db(tmp_path_factory):
+    """A populated SQLite analytics database.
+
+    The talk-to-data suite must run with no Postgres server and no model
+    runtime, so the whole stack is exercised against SQLite built from the same
+    loader that populates Postgres in production.
+    """
+    from sqlalchemy import create_engine
+
+    from src.data.db_loader import load_database
+
+    path = tmp_path_factory.mktemp("db") / "analytics.db"
+    engine = create_engine(f"sqlite:///{path}", future=True)
+    load_database(include_predictions=True, engine=engine)
+    return engine
+
+
+@pytest.fixture(scope="session")
+def live_schema(analytics_db):
+    """The schema whitelist read back from the populated test database."""
+    from src.talk_to_data.query_runner import fetch_schema
+
+    return fetch_schema(analytics_db)
+
+
+class FakeLLMClient:
+    """Scripted LLM stand-in.
+
+    Talk-to-data logic must be testable without a model: real generation is
+    non-deterministic and slow, and neither property belongs in a unit test.
+    """
+
+    provider_name = "fake"
+
+    def __init__(self, responses: list[str] | None = None, available: bool = True) -> None:
+        self.responses = list(responses or [])
+        self.available = available
+        self.calls: list[tuple[str, str]] = []
+
+    @property
+    def model_name(self) -> str:
+        return "fake-model"
+
+    def is_available(self) -> tuple[bool, str]:
+        return self.available, "fake client ready" if self.available else "fake client disabled"
+
+    @property
+    def generation_calls(self) -> list[tuple[str, str]]:
+        """Only the SQL-generation calls.
+
+        The same client also serves summarisation, so tests that count
+        generation attempts must filter -- otherwise a summary call looks like
+        an extra retry.
+        """
+        return [call for call in self.calls if "SQL analyst" in call[0]]
+
+    @property
+    def summary_calls(self) -> list[tuple[str, str]]:
+        """Only the summarisation calls."""
+        return [call for call in self.calls if "summarising" in call[0]]
+
+    def complete(self, system_prompt: str, user_prompt: str):
+        from src.talk_to_data.llm_client import LLMResponse
+
+        self.calls.append((system_prompt, user_prompt))
+        is_summary = "summarising" in system_prompt
+        if is_summary:
+            # A canned, grounded summary: these tests exercise orchestration,
+            # not summary quality, and an ungrounded string would trip the
+            # grounding guard and change what is being tested.
+            text = "The query returned results."
+        else:
+            text = self.responses.pop(0) if self.responses else "SELECT 1 AS x FROM applications"
+        return LLMResponse(
+            text=text, provider=self.provider_name, model=self.model_name,
+            prompt_tokens=len(user_prompt) // 4, completion_tokens=len(text) // 4,
+        )
+
+
+@pytest.fixture
+def fake_llm():
+    """Factory for scripted LLM clients."""
+    return FakeLLMClient
