@@ -116,8 +116,21 @@ class OllamaClient(LLMClient):
         with urllib.request.urlopen(request, timeout=timeout) as response:
             return json.loads(response.read().decode("utf-8"))
 
+    def server_reachable(self) -> bool:
+        """Whether the Ollama server itself is answering.
+
+        Distinct from having a model: on first start the server is healthy for
+        several minutes while the model downloads, and those two states need
+        different messages.
+        """
+        try:
+            self._request("/api/tags", None, PROBE_TIMEOUT_SECONDS)
+            return True
+        except (urllib.error.URLError, OSError, json.JSONDecodeError, TimeoutError):
+            return False
+
     def available_models(self) -> list[str]:
-        """List model tags present on the server ( empty if unreachable )."""
+        """List model tags present on the server (empty if unreachable)."""
         try:
             payload = self._request("/api/tags", None, PROBE_TIMEOUT_SECONDS)
         except (urllib.error.URLError, OSError, json.JSONDecodeError, TimeoutError):
@@ -160,15 +173,27 @@ class OllamaClient(LLMClient):
     # -------------------------------------------------------------- public --
     def is_available(self) -> tuple[bool, str]:
         installed = self.available_models()
-        if not installed:
+        if installed:
+            return True, f"Local runtime ready at {self.base_url} using '{self.resolve_model()}'."
+
+        # The server being up with no model is the normal first-run state, and
+        # it is worth saying so: the download takes several minutes and an
+        # evaluator meeting "cannot reach the runtime" would reasonably assume
+        # something is broken.
+        if self.server_reachable():
             return False, (
-                f"Cannot reach the local model runtime at {self.base_url}. "
-                "If you are running outside Docker, start it with 'ollama serve' and set "
-                "OLLAMA_BASE_URL=http://localhost:11434. Under docker-compose the 'ollama' "
-                "service provides this automatically."
+                f"The local model runtime is running at {self.base_url}, but no model has "
+                f"finished downloading yet. '{self.model}' is around 4.7GB and is pulled on "
+                "first start -- this usually takes a few minutes. Watch it with "
+                "'docker-compose logs -f ollama-pull', then reload this page. "
+                "Every other feature works in the meantime."
             )
-        resolved = self.resolve_model()
-        return True, f"Local runtime ready at {self.base_url} using '{resolved}'."
+        return False, (
+            f"Cannot reach the local model runtime at {self.base_url}. "
+            "Under docker-compose the 'ollama' service provides this automatically. "
+            "Running outside Docker, start it with 'ollama serve' and set "
+            "OLLAMA_BASE_URL=http://localhost:11434."
+        )
 
     def complete(self, system_prompt: str, user_prompt: str) -> LLMResponse:
         model = self.resolve_model()

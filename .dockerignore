@@ -1,0 +1,21 @@
+.git
+.gitignore
+.venv
+venv
+__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.ipynb_checkpoints
+notebooks/*.ipynb
+tests
+documents
+.env
+models/*
+reports/*
+# The real Home Credit CSVs are mounted at runtime, never baked into the image.
+data/*
+!data/sample
+!data/sample/**
+*.md

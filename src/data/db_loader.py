@@ -19,6 +19,7 @@ from typing import Final
 import numpy as np
 import pandas as pd
 from sqlalchemy import inspect, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.engine import Engine
 
 from src.data.loader import aggregate_bureau, build_dataset, load_bureau
@@ -207,6 +208,43 @@ def write_tables(tables: dict[str, pd.DataFrame], engine: Engine, chunk_size: in
         logger.info("Loaded %-16s %s rows", name, f"{len(cleaned):,}")
 
 
+def grant_readonly_access(engine: Engine) -> None:
+    """Re-grant SELECT to the read-only role on the freshly created tables.
+
+    The compose init script sets default privileges on first start, which covers
+    tables created afterwards. This is the belt-and-braces pass: the loader
+    DROPs and recreates tables on every run, and running the grant here means
+    the read-only role works even against a database that was provisioned
+    without the init script -- an externally managed instance, for example.
+
+    Failures are logged, not raised: an insufficiently privileged app role is a
+    deployment choice, not a reason to abort the load.
+    """
+    if engine.dialect.name != "postgresql":
+        return
+
+    role = settings.postgres_readonly_user
+    try:
+        with engine.begin() as connection:
+            exists = connection.execute(
+                text("SELECT 1 FROM pg_roles WHERE rolname = :role"), {"role": role}
+            ).scalar()
+            if not exists:
+                logger.warning(
+                    "Read-only role %r does not exist; the chat feature will fall back to "
+                    "the application role. Create it with docker/init-readonly.sh.", role
+                )
+                return
+            for statement in (
+                f'GRANT USAGE ON SCHEMA public TO "{role}"',
+                f'GRANT SELECT ON ALL TABLES IN SCHEMA public TO "{role}"',
+            ):
+                connection.execute(text(statement))
+        logger.info("Granted SELECT on all tables to %r", role)
+    except SQLAlchemyError as error:
+        logger.warning("Could not grant read-only access to %r: %s", role, error)
+
+
 def load_database(include_predictions: bool = True, engine: Engine | None = None) -> dict[str, int]:
     """Create the schema and load every table.
 
@@ -221,6 +259,7 @@ def load_database(include_predictions: bool = True, engine: Engine | None = None
     tables = build_tables(include_predictions=include_predictions)
     create_schema(target)
     write_tables(tables, target)
+    grant_readonly_access(target)
 
     counts = {name: len(frame) for name, frame in tables.items()}
     logger.info("Database load complete: %s", counts)

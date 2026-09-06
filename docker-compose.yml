@@ -1,0 +1,161 @@
+# ===========================================================================
+# Credit Risk Intelligence Platform
+#
+#   docker-compose up
+#
+# That is the whole thing. Three services come up, the model trains on first
+# run, the database loads, and the app is served at http://localhost:8501 --
+# with a working chatbot and no API key, because the language model runs
+# locally in the `ollama` service.
+#
+# First start takes several minutes: it downloads the ~4.7GB model and trains
+# the bake-off. Later starts reuse both and come up in seconds.
+# ===========================================================================
+
+services:
+  # -------------------------------------------------------------------------
+  # PostgreSQL -- the analytics database the chat feature queries.
+  # -------------------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    container_name: crp-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-credit}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-credit_pass_change_me}
+      POSTGRES_DB: ${POSTGRES_DB:-credit_risk}
+      POSTGRES_READONLY_USER: ${POSTGRES_READONLY_USER:-credit_readonly}
+      POSTGRES_READONLY_PASSWORD: ${POSTGRES_READONLY_PASSWORD:-readonly_pass_change_me}
+      SQL_TIMEOUT_SECONDS: ${SQL_TIMEOUT_SECONDS:-15}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Runs once on first start, before any table exists.
+      - ./docker/init-readonly.sh:/docker-entrypoint-initdb.d/10-init-readonly.sh:ro
+    ports:
+      - "${POSTGRES_PORT_HOST:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-credit} -d ${POSTGRES_DB:-credit_risk}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  # -------------------------------------------------------------------------
+  # Ollama -- the local language model runtime.
+  #
+  # Runs on-box so applicant data never leaves the host, and so the platform
+  # needs no API key to be fully functional.
+  # -------------------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:latest
+    container_name: crp-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_models:/root/.ollama
+    ports:
+      - "${OLLAMA_PORT_HOST:-11434}:11434"
+    environment:
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-10m}
+    healthcheck:
+      # `ollama list` succeeds only once the server is actually accepting
+      # requests, which is what the model pull and the app both need.
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # -------------------------------------------------------------------------
+  # One-shot model pull. A separate service rather than a step in the app so
+  # that the download is visible in `docker-compose up` output and is not
+  # repeated on every app restart.
+  # -------------------------------------------------------------------------
+  ollama-pull:
+    image: ollama/ollama:latest
+    container_name: crp-ollama-pull
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    volumes:
+      - ollama_models:/root/.ollama
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        MODEL="${LLM_MODEL:-qwen2.5-coder:7b}"
+        FALLBACK="${OLLAMA_FALLBACK_MODEL:-llama3.1:8b}"
+        if ollama list 2>/dev/null | grep -q "$${MODEL%%:*}"; then
+          echo "==> $$MODEL already present"
+          exit 0
+        fi
+        echo "==> Pulling $$MODEL (first run only; this is a few GB)"
+        if ! ollama pull "$$MODEL"; then
+          echo "==> Pull of $$MODEL failed; trying fallback $$FALLBACK"
+          ollama pull "$$FALLBACK" || echo "==> Both pulls failed; Chat will be unavailable"
+        fi
+        echo "==> Model ready"
+    restart: "no"
+
+  # -------------------------------------------------------------------------
+  # The application: EDA, model, explainability, rules and UI.
+  # -------------------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: crp-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    environment:
+      # --- data ---
+      DATA_MODE: ${DATA_MODE:-sample}
+      DATA_DIR: /app/data
+      SAMPLE_DATA_DIR: /app/data/sample
+      MAX_ROWS: ${MAX_ROWS:-0}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      # --- database ---
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-credit}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-credit_pass_change_me}
+      POSTGRES_DB: ${POSTGRES_DB:-credit_risk}
+      POSTGRES_READONLY_USER: ${POSTGRES_READONLY_USER:-credit_readonly}
+      POSTGRES_READONLY_PASSWORD: ${POSTGRES_READONLY_PASSWORD:-readonly_pass_change_me}
+      USE_SQLITE_FALLBACK: ${USE_SQLITE_FALLBACK:-false}
+      # --- local LLM (no key required) ---
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      LLM_MODEL: ${LLM_MODEL:-qwen2.5-coder:7b}
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_FALLBACK_MODEL: ${OLLAMA_FALLBACK_MODEL:-llama3.1:8b}
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-10m}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-120}
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.0}
+      # --- optional hosted overrides; blank is fine and expected ---
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      # --- guardrails ---
+      SQL_MAX_ROWS: ${SQL_MAX_ROWS:-200}
+      SQL_TIMEOUT_SECONDS: ${SQL_TIMEOUT_SECONDS:-15}
+      MEMORY_MAX_TURNS: ${MEMORY_MAX_TURNS:-6}
+    volumes:
+      # Mount the real Home Credit CSVs here and set DATA_MODE=real to use them.
+      # The directory is gitignored; nothing in it is ever committed.
+      - ./data:/app/data
+      # Persist trained artifacts and generated figures across rebuilds.
+      - ./models:/app/models
+      - ./reports:/app/reports
+    ports:
+      - "${STREAMLIT_PORT_HOST:-8501}:8501"
+
+volumes:
+  postgres_data:
+    driver: local
+  ollama_models:
+    driver: local

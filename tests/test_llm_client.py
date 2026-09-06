@@ -135,3 +135,29 @@ def test_hosted_clients_report_missing_keys(monkeypatch) -> None:
         assert "API_KEY" in message
         with pytest.raises(LLMUnavailableError):
             client.complete("system", "user")
+
+
+def test_ollama_distinguishes_downloading_from_unreachable() -> None:
+    """The first-run state is 'still downloading', not 'broken'.
+
+    A server that is up with no model yet is the normal state for several
+    minutes after `docker-compose up`, and reporting it as unreachable would
+    send a new user debugging a problem that does not exist.
+    """
+    client = OllamaClient()
+
+    with patch.object(client, "available_models", return_value=[]), patch.object(
+        client, "server_reachable", return_value=True
+    ):
+        available, message = client.is_available()
+        assert not available
+        assert "downloading" in message.lower()
+        assert "ollama-pull" in message
+        assert "Every other feature works" in message
+
+    with patch.object(client, "available_models", return_value=[]), patch.object(
+        client, "server_reachable", return_value=False
+    ):
+        available, message = client.is_available()
+        assert not available
+        assert "Cannot reach" in message
