@@ -373,6 +373,44 @@ def load_database(include_predictions: bool = True, engine: Engine | None = None
     return counts
 
 
+def ensure_database_loaded(engine: Engine | None = None) -> bool:
+    """Build the analytics tables if they are missing or empty.
+
+    The Docker entrypoint loads the database before starting the app, but a
+    platform-as-a-service deployment just runs ``streamlit run`` -- nothing
+    executes the entrypoint. Without this the chat would come up against an
+    empty database and reject every question as referencing an unknown table,
+    which looks like a broken feature rather than a missing setup step.
+
+    Idempotent and cheap to call: it inspects first and only loads when there
+    is nothing there.
+
+    Args:
+        engine: Target engine; the configured one is used if omitted.
+
+    Returns:
+        True if a load was performed, False if the tables were already present.
+    """
+    target = engine or get_engine()
+    try:
+        counts = table_row_counts(target)
+    except SQLAlchemyError as error:
+        logger.warning("Could not inspect the database: %s", error)
+        return False
+
+    if counts.get("applications", 0) > 0:
+        logger.debug("Analytics tables already present (%s)", counts)
+        return False
+
+    logger.info("Analytics database is empty; loading it now")
+    try:
+        load_database(include_predictions=True, engine=target)
+        return True
+    except Exception as error:  # noqa: BLE001 - reported, app continues
+        logger.warning("Could not load the analytics database: %s", error)
+        return False
+
+
 def table_row_counts(engine: Engine | None = None) -> dict[str, int]:
     """Return the current row count of every analytics table that exists."""
     target = engine or get_engine()

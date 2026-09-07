@@ -20,6 +20,7 @@ Run it with::
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,53 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import pandas as pd
 import streamlit as st
+
+
+def _apply_streamlit_secrets() -> None:
+    """Copy Streamlit secrets into the environment before settings are read.
+
+    Managed platforms supply configuration as a secrets file rather than real
+    environment variables, but this project's settings object reads the
+    environment and is constructed at import time. So the bridge has to run
+    before any module that imports ``settings``.
+
+    The file is parsed directly with ``tomllib`` rather than through
+    ``st.secrets``: touching the Streamlit API counts as issuing a Streamlit
+    command, and ``set_page_config()`` must be the first one. Reading the file
+    ourselves keeps this a plain filesystem operation.
+
+    Existing environment variables win, so a container's own configuration is
+    never overridden by a secrets file that happens to be present.
+    """
+    import tomllib
+
+    secrets: dict[str, object] = {}
+    for candidate in (
+        PROJECT_ROOT / ".streamlit" / "secrets.toml",
+        Path.home() / ".streamlit" / "secrets.toml",
+    ):
+        try:
+            if candidate.is_file():
+                with candidate.open("rb") as handle:
+                    secrets.update(tomllib.load(handle))
+        except Exception:  # noqa: BLE001 - a malformed file must not stop the app
+            continue
+    if not secrets:
+        return
+
+    for key in (
+        "DATA_MODE", "USE_SQLITE_FALLBACK", "SQLITE_PATH", "LOG_LEVEL",
+        "POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_USER", "POSTGRES_PASSWORD",
+        "POSTGRES_DB", "POSTGRES_READONLY_USER", "POSTGRES_READONLY_PASSWORD",
+        "LLM_PROVIDER", "LLM_MODEL", "LLM_TIMEOUT_SECONDS", "OLLAMA_BASE_URL",
+        "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY",
+        "SQL_MAX_ROWS", "SQL_TIMEOUT_SECONDS", "MEMORY_MAX_TURNS",
+    ):
+        if key in secrets and key not in os.environ:
+            os.environ[key] = str(secrets[key])
+
+
+_apply_streamlit_secrets()
 
 from src.utils.config import settings
 from src.utils.logger import get_logger
@@ -118,6 +166,24 @@ def load_policy_rules() -> Any | None:
         return None
 
 
+@st.cache_resource(show_spinner="Preparing the analytics database...")
+def ensure_analytics_database() -> bool:
+    """Build the analytics tables on first use if they are absent.
+
+    Under docker-compose the entrypoint does this before the app starts. On a
+    platform that simply runs `streamlit run`, nothing does -- so the app builds
+    them itself the first time the chat is opened. Cached, so it happens once
+    per process rather than once per interaction.
+    """
+    from src.data.db_loader import ensure_database_loaded
+
+    try:
+        return ensure_database_loaded()
+    except Exception as error:  # noqa: BLE001 - chat degrades, app continues
+        logger.warning("Could not prepare the analytics database: %s", error)
+        return False
+
+
 def get_chat_interface() -> Any:
     """Build the talk-to-data interface once per session.
 
@@ -128,6 +194,7 @@ def get_chat_interface() -> Any:
         from src.talk_to_data.nl_to_sql import TalkToData
 
         try:
+            ensure_analytics_database()
             st.session_state["chat"] = TalkToData()
             st.session_state["chat_error"] = None
         except Exception as error:  # noqa: BLE001 - typically the DB being absent

@@ -72,3 +72,6 @@ notebooks/.ipynb_checkpoints/
 
 # ---- Streamlit ----
 .streamlit/secrets.toml
+
+# Streamlit secrets are per-deployment and never committed; the config is.
+.streamlit/secrets.toml

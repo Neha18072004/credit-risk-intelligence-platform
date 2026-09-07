@@ -1,0 +1,21 @@
+# ---------------------------------------------------------------------------
+# Streamlit configuration, used by both the container and a cloud deployment.
+# ---------------------------------------------------------------------------
+
+[server]
+headless = true
+# Uploads are not part of this application; keeping the cap low avoids holding
+# large request bodies in memory on a small instance.
+maxUploadSize = 5
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+# Matches the validated chart palette in src/utils/viz.py, so the interface and
+# the figures inside it read as one system rather than two.
+base = "light"
+primaryColor = "#2a78d6"
+backgroundColor = "#fcfcfb"
+secondaryBackgroundColor = "#f2f2ef"
+textColor = "#0b0b0b"

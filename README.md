@@ -28,7 +28,7 @@ and applicant records never leave the machine.
 
 1. [What it does](#1-what-it-does)
 2. [Architecture](#2-architecture)
-3. [Getting started](#3-getting-started) · [Lightweight deployment](#lightweight-deployment)
+3. [Getting started](#3-getting-started) · [Deploy publicly](#deploy-it-publicly-streamlit-community-cloud-free)
 4. [Using the real Kaggle data](#4-using-the-real-kaggle-data)
 5. [Exploratory analysis](#5-exploratory-analysis)
 6. [Model selection and results](#6-model-selection-and-results)
@@ -160,6 +160,42 @@ Or skip PostgreSQL entirely with `USE_SQLITE_FALLBACK=true`. Everything except
 production-grade concurrency works the same.
 
 ---
+
+### Deploy it publicly (Streamlit Community Cloud, free)
+
+The app is ready to deploy as-is — it builds its own analytics database on
+first use, falls back to SQLite when no PostgreSQL is configured, and serves the
+committed model so there is no training step.
+
+1. Go to **share.streamlit.io** and sign in with GitHub.
+2. **New app** → pick this repository, branch `main`, main file
+   `src/ui/app.py`.
+3. Open **Advanced settings → Secrets** and paste:
+
+   ```toml
+   DATA_MODE = "sample"
+   USE_SQLITE_FALLBACK = "true"
+   SQLITE_PATH = "./data/analytics.db"
+   LLM_PROVIDER = "none"
+   ```
+
+4. **Deploy.** First build takes a few minutes while dependencies install.
+
+Measured on this configuration: **peak memory 356 MB**, comfortably inside the
+1 GB free tier.
+
+**To enable the chatbot on the deployed app**, swap the last line for a hosted
+provider and add its key — the local model cannot run on a managed platform:
+
+```toml
+LLM_PROVIDER = "gemini"          # or "openai" / "anthropic"
+GOOGLE_API_KEY = "your-key-here"
+```
+
+Without a key the Chat tab explains that it is unavailable and every other
+section works normally. Note that the deployed app runs on the **synthetic
+fixtures** — the real 2.5GB Kaggle files cannot be committed — but it still
+scores with the model trained on all 307,511 real rows.
 
 ### Lightweight deployment
 
