@@ -56,7 +56,9 @@ venv/
 .venv/
 env/
 ENV/
-.python-version
+# .python-version is NOT ignored: the deployment platform reads it to pick the
+# interpreter, and the pinned dependency versions only have wheels for 3.11.
+# (A pyenv-managed local version would live in a global gitignore, not here.)
 
 # ---- Tooling caches ----
 .pytest_cache/
