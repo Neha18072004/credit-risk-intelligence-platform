@@ -1,0 +1,28 @@
+# ---------------------------------------------------------------------------
+# Development and optional extras.
+#
+#   pip install -r requirements.txt -r requirements-dev.txt
+#
+# Deliberately not in the deployed image: notebook execution pulls in jedi and
+# debugpy (~70MB) that a server never uses, and the hosted LLM SDKs pull in the
+# Google API client stack (~150MB) that is only needed if you choose a hosted
+# provider over the bundled local model.
+# ---------------------------------------------------------------------------
+-r requirements.txt
+
+# --- tests and linting ---
+pytest==8.3.3
+pyflakes==3.2.0
+
+# --- notebook execution (only needed to re-run eda.ipynb) ---
+nbformat==5.10.4
+nbconvert==7.16.4
+ipykernel==6.29.5
+
+# --- optional hosted LLM providers ---
+# The default provider is the local Ollama runtime, which needs no SDK at all --
+# it is reached over plain HTTP using the standard library. Install these only
+# if you set LLM_PROVIDER to openai, anthropic or gemini.
+openai==1.54.4
+anthropic==0.39.0
+google-generativeai==0.8.3

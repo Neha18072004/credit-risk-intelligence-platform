@@ -8,6 +8,9 @@ Trained and evaluated on the **full 307,511-row Home Credit dataset**, using fou
 of its seven tables. Selected model: LightGBM, **ROC-AUC 0.782**, PR-AUC 0.268
 (3.3x the no-skill baseline), calibrated to a Brier score of 0.066.
 
+The **trained model ships with the repository**, so a fresh clone scores
+applicants with the real 307k-row model immediately — no training step.
+
 **One command runs all of it, with no API key:**
 
 ```bash
@@ -25,7 +28,7 @@ and applicant records never leave the machine.
 
 1. [What it does](#1-what-it-does)
 2. [Architecture](#2-architecture)
-3. [Getting started](#3-getting-started)
+3. [Getting started](#3-getting-started) · [Lightweight deployment](#lightweight-deployment)
 4. [Using the real Kaggle data](#4-using-the-real-kaggle-data)
 5. [Exploratory analysis](#5-exploratory-analysis)
 6. [Model selection and results](#6-model-selection-and-results)
@@ -135,7 +138,7 @@ docker-compose logs -f app
 
 ```bash
 python3.11 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.txt        # add -r requirements-dev.txt for tests/notebook
 cp .env.example .env
 
 python -m src.data.generate_sample   # synthetic fixtures
@@ -157,6 +160,36 @@ Or skip PostgreSQL entirely with `USE_SQLITE_FALLBACK=true`. Everything except
 production-grade concurrency works the same.
 
 ---
+
+### Lightweight deployment
+
+The full stack bundles a local language model, which is what makes the chatbot
+work with no API key — but it is 4.2GB of image plus a 4.7GB model, and needs
+that resident in RAM. That does not fit a small cloud instance.
+
+For deployment there is a second profile:
+
+```bash
+docker compose -f docker-compose.lite.yml up
+```
+
+| | Full stack | Lite stack |
+|---|---|---|
+| Services | app + PostgreSQL + Ollama | app + PostgreSQL |
+| Images on disk | **10.43 GB** | **1.83 GB** |
+| RAM at rest | ~6 GB (model resident) | **267 MB** |
+| Chat | Local model, no API key | Hosted provider, or disabled |
+| Everything else | Works | Works, identically |
+
+The lite profile serves the **committed pre-trained model**, so scoring, SHAP
+explanations, the policy rules and the audit trail are all immediate — there is
+no training step at start-up. Only the chat needs a decision: set
+`LLM_PROVIDER` and a key for a hosted provider, or leave it and the Chat tab
+reports itself unavailable while every other section carries on.
+
+There is also `requirements-serve.txt`, a minimal install (~300MB smaller) that
+omits CatBoost — a training-time dependency the shipped LightGBM model does not
+need — for platforms where you install packages rather than run a container.
 
 ## 4. Using the real Kaggle data
 
@@ -625,6 +658,31 @@ change is a reviewable, revertable event.
 | **Few-shot over instructions** | Prose rules are followed inconsistently; a worked example showing `AVG(target) * 100` is imitated reliably. 8 examples, each teaching a distinct *question shape* |
 | **Compact history** | Turn summaries, not result rows |
 | **`few_shot_limit`** | Runtime lever to trade accuracy for tokens |
+
+### Choosing the model size: measured, not assumed
+
+A smaller model would make the stack far lighter, so it was tested rather than
+guessed at. Both were run over the same questions against the real database:
+
+| | qwen2.5-coder:1.5b | qwen2.5-coder:7b |
+|---|---|---|
+| Size | 986 MB | 4.7 GB |
+| Average latency | **4.8s** | 13.1s |
+| "Which education level has the highest default rate?" | ❌ said Secondary, 8.94% — the rows show Lower secondary at 10.93% | ✅ correct |
+| "What share have no external credit history?" | ❌ 85.69% — that is the share *with* history, inverted | ✅ correct |
+| "What is the average credit card balance?" | ❌ **fabricated 599,026** for a column that does not exist | ✅ refused |
+
+The 1.5B model is 2.7x faster and confidently wrong, so **the 7B is the
+default**. It is available as `LLM_MODEL=qwen2.5-coder:1.5b` for anyone who
+needs the smaller footprint and accepts that trade.
+
+Worth recording how nearly this went the other way: an initial pass scored both
+models 6/6 and looked like a clear win for the small one. That metric counted a
+question as passed if the pipeline *succeeded or refused* — not if the answer
+was **right**. Reading the actual answers reversed the conclusion. The
+grounding checks caught three of the 1.5B model's fabrications, which is the
+control working, but a control that fires constantly is a signal to change the
+model, not to trust the control.
 
 Two rules were added in response to *observed* failures, not speculation:
 

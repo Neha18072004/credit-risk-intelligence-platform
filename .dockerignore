@@ -10,10 +10,9 @@ __pycache__
 .ipynb_checkpoints
 notebooks/*.ipynb
 tests
+requirements-dev.txt
 documents
 .env
-models/*
-reports/*
 # The real Home Credit CSVs are mounted at runtime, never baked into the image.
 data/*
 !data/sample

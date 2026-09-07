@@ -1,0 +1,27 @@
+# ---------------------------------------------------------------------------
+# Minimal serving profile, for deploying the app to a small cloud instance.
+#
+#   pip install -r requirements-serve.txt
+#
+# Serves the committed pre-trained model: scoring, SHAP explanations, the
+# policy rules and the chat all work. It cannot run the three-way bake-off,
+# because CatBoost is omitted -- that is a training-time dependency and the
+# shipped model is LightGBM.
+#
+# Roughly 300MB smaller than the full install.
+# ---------------------------------------------------------------------------
+pandas==2.2.3
+numpy==1.26.4
+scipy==1.13.1
+scikit-learn==1.5.2
+lightgbm==4.5.0
+shap==0.46.0
+joblib==1.4.2
+matplotlib==3.9.2
+SQLAlchemy==2.0.36
+psycopg2-binary==2.9.10
+sqlglot==25.24.5
+pydantic==2.9.2
+pydantic-settings==2.6.1
+python-dotenv==1.0.1
+streamlit==1.39.0

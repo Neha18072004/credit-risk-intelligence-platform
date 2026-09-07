@@ -1,0 +1,42 @@
+[
+  {
+    "issue": "DAYS_EMPLOYED sentinel value 365243",
+    "severity": "high",
+    "n_affected": 55374,
+    "pct_affected": 18.01,
+    "detail": "365243 days is ~1000 years of employment. It is a sentinel meaning 'no employment record', which attaches almost entirely to pensioners.",
+    "treatment": "Nulled and replaced with an explicit DAYS_EMPLOYED_ANOMALY flag."
+  },
+  {
+    "issue": "CODE_GENDER = 'XNA'",
+    "severity": "low",
+    "n_affected": 4,
+    "pct_affected": 0.0,
+    "detail": "An undefined placeholder level, not a real category.",
+    "treatment": "Mapped to null rather than treated as a third gender."
+  },
+  {
+    "issue": "Columns more than 50% missing",
+    "severity": "medium",
+    "n_affected": 41,
+    "pct_affected": 22.91,
+    "detail": "41 columns exceed 50% missing, led by COMMONAREA_MODE at 69.87%. Most are building-block property attributes.",
+    "treatment": "Retained un-imputed for the tree models, which branch on missingness directly; the linear baseline imputes inside its own CV fold."
+  },
+  {
+    "issue": "Extreme income outliers",
+    "severity": "medium",
+    "n_affected": 3014,
+    "pct_affected": 0.98,
+    "detail": "3014 applicants report income above 472,500 (Q3 + 3*IQR). Income is strongly right-skewed, so the tail is long but genuine.",
+    "treatment": "Left in place -- tree models are rank-based and immune. Ratio features (credit-to-income) also neutralise scale."
+  },
+  {
+    "issue": "Applicants with no external credit history",
+    "severity": "medium",
+    "n_affected": 44020,
+    "pct_affected": 14.31,
+    "detail": "These applicants have no bureau record at all, so every BUREAU_* metric is null. This is a thin file, not a data defect.",
+    "treatment": "Nulls preserved and marked with BUREAU_HAS_HISTORY so the model can price the absence of history."
+  }
+]

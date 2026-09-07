@@ -1,0 +1,30 @@
+[
+  {
+    "configuration": "application only",
+    "n_features": 139,
+    "pr_auc": 0.2507,
+    "roc_auc": 0.766,
+    "seconds": 19.0
+  },
+  {
+    "configuration": "+ bureau",
+    "n_features": 166,
+    "pr_auc": 0.2576,
+    "roc_auc": 0.7697,
+    "seconds": 24.5
+  },
+  {
+    "configuration": "+ previous_application",
+    "n_features": 183,
+    "pr_auc": 0.2638,
+    "roc_auc": 0.7747,
+    "seconds": 22.2
+  },
+  {
+    "configuration": "+ installments_payments",
+    "n_features": 198,
+    "pr_auc": 0.2708,
+    "roc_auc": 0.78,
+    "seconds": 28.7
+  }
+]

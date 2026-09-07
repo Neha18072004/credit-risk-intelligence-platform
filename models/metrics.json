@@ -1,0 +1,92 @@
+{
+  "selected_model": "lightgbm",
+  "selection_criterion": "PR-AUC first; candidates within one standard error of the leader are treated as tied and decided on exact tree-SHAP support, then fit cost",
+  "n_rows": 4000,
+  "n_features": 198,
+  "n_defaults": 321,
+  "default_rate": 0.0803,
+  "scale_pos_weight": 11.461,
+  "cv_folds": 5,
+  "oof_uncalibrated": {
+    "pr_auc": 0.3101,
+    "roc_auc": 0.8292,
+    "brier": 0.0906
+  },
+  "oof_calibrated": {
+    "pr_auc": 0.3027,
+    "roc_auc": 0.8368,
+    "brier": 0.0621,
+    "mean_predicted": 0.0803,
+    "observed_rate": 0.0803
+  },
+  "bakeoff": [
+    {
+      "name": "logistic",
+      "pr_auc": 0.3349,
+      "roc_auc": 0.8285,
+      "brier": 0.1473,
+      "log_loss": 0.453,
+      "fit_seconds": 0.5,
+      "supports_shap": false,
+      "notes": "Interpretable baseline; needs imputation, one-hot and scaling.",
+      "best_iteration": NaN,
+      "pr_auc_std": 0.0765,
+      "pr_auc_stderr": 0.0342
+    },
+    {
+      "name": "lightgbm",
+      "pr_auc": 0.3101,
+      "roc_auc": 0.8292,
+      "brier": 0.0906,
+      "log_loss": 0.2963,
+      "fit_seconds": 2.2,
+      "supports_shap": true,
+      "notes": "Native NaN and categorical handling; exact SHAP TreeExplainer; fastest.",
+      "best_iteration": 62.0,
+      "pr_auc_std": 0.0516,
+      "pr_auc_stderr": 0.0231
+    }
+  ],
+  "thresholds": {
+    "decision_threshold": 0.2,
+    "decision_precision": 0.2698,
+    "decision_recall": 0.6698,
+    "decision_f1": 0.3846,
+    "f2_optimal_threshold": 0.129412,
+    "f2_optimal_recall": 0.7196,
+    "band_low_max": 0.08025,
+    "band_medium_max": 0.2,
+    "band_definition": "Low: predicted default probability at or below the portfolio base rate. Medium: above the base rate but below the tuned decision threshold. High: at or above the tuned decision threshold, i.e. the population the model refers for review.",
+    "band_profile": [
+      {
+        "band": "Low",
+        "n": 2942,
+        "population_share": 73.55,
+        "default_rate": 2.62,
+        "share_of_all_defaults": 23.99
+      },
+      {
+        "band": "Medium",
+        "n": 291,
+        "population_share": 7.28,
+        "default_rate": 12.03,
+        "share_of_all_defaults": 10.9
+      },
+      {
+        "band": "High",
+        "n": 767,
+        "population_share": 19.18,
+        "default_rate": 27.25,
+        "share_of_all_defaults": 65.11
+      }
+    ],
+    "calibration_method": "isotonic",
+    "risk_score_scale": 1000
+  },
+  "tuning": {
+    "enabled": false,
+    "iterations_per_model": 0,
+    "scoring": "average_precision",
+    "results": {}
+  }
+}

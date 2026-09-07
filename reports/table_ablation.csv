@@ -1,0 +1,5 @@
+configuration,n_features,pr_auc,roc_auc,seconds,pr_auc_gain,roc_auc_gain,features_added
+application only,139,0.2507,0.766,19.0,,,0
++ bureau,166,0.2576,0.7697,24.5,0.0069,0.0037,27
++ previous_application,183,0.2638,0.7747,22.2,0.0062,0.005,17
++ installments_payments,198,0.2708,0.78,28.7,0.007,0.0053,15

@@ -1,0 +1,108 @@
+{
+  "model": "lightgbm",
+  "n_rows": 307511,
+  "n_defaults": 24825,
+  "default_rate": 0.0807,
+  "ranking": {
+    "pr_auc": 0.2677,
+    "roc_auc": 0.7816,
+    "pr_auc_baseline": 0.0807,
+    "pr_auc_lift_over_random": 3.32
+  },
+  "calibration": {
+    "brier": 0.0663,
+    "mean_predicted": 0.0807,
+    "observed_rate": 0.0807,
+    "caveat": "The isotonic calibrator is fitted on these same out-of-fold predictions, so this reliability curve is in-sample and optimistic. The ranking metrics above are genuinely out-of-fold; the calibration fit is not. A held-out set would be required to measure calibration honestly."
+  },
+  "at_tuned_threshold": {
+    "threshold": 0.165333,
+    "precision": 0.2667,
+    "recall": 0.4296,
+    "f1": 0.3291,
+    "flagged_share": 0.13,
+    "confusion": {
+      "true_negative_good_approved": 253361,
+      "false_positive_good_declined": 29325,
+      "false_negative_default_missed": 14160,
+      "true_positive_default_caught": 10665
+    }
+  },
+  "at_default_threshold": {
+    "threshold": 0.5,
+    "precision": 0.6037,
+    "recall": 0.0287,
+    "f1": 0.0548,
+    "flagged_share": 0.0038,
+    "confusion": {
+      "true_negative_good_approved": 282218,
+      "false_positive_good_declined": 468,
+      "false_negative_default_missed": 24112,
+      "true_positive_default_caught": 713
+    }
+  },
+  "band_profile": [
+    {
+      "band": "Low",
+      "n": 203963,
+      "population_share": 66.33,
+      "default_rate": 3.34,
+      "share_of_all_defaults": 27.43
+    },
+    {
+      "band": "Medium",
+      "n": 64683,
+      "population_share": 21.03,
+      "default_rate": 11.65,
+      "share_of_all_defaults": 30.36
+    },
+    {
+      "band": "High",
+      "n": 38865,
+      "population_share": 12.64,
+      "default_rate": 26.96,
+      "share_of_all_defaults": 42.21
+    }
+  ],
+  "bakeoff": [
+    {
+      "name": "lightgbm",
+      "pr_auc": 0.272,
+      "roc_auc": 0.7811,
+      "brier": 0.1711,
+      "log_loss": 0.5125,
+      "fit_seconds": 34.4,
+      "supports_shap": true,
+      "notes": "Native NaN and categorical handling; exact SHAP TreeExplainer; fastest.",
+      "best_iteration": 371.0,
+      "pr_auc_std": 0.0074,
+      "pr_auc_stderr": 0.0033
+    },
+    {
+      "name": "catboost",
+      "pr_auc": 0.2705,
+      "roc_auc": 0.7809,
+      "brier": 0.1801,
+      "log_loss": 0.5373,
+      "fit_seconds": 212.1,
+      "supports_shap": true,
+      "notes": "Ordered boosting, strong categorical handling; slower to fit.",
+      "best_iteration": 387.0,
+      "pr_auc_std": 0.0087,
+      "pr_auc_stderr": 0.0039
+    },
+    {
+      "name": "logistic",
+      "pr_auc": 0.248,
+      "roc_auc": 0.7666,
+      "brier": 0.1961,
+      "log_loss": 0.5762,
+      "fit_seconds": 38.7,
+      "supports_shap": false,
+      "notes": "Interpretable baseline; needs imputation, one-hot and scaling.",
+      "best_iteration": NaN,
+      "pr_auc_std": 0.0059,
+      "pr_auc_stderr": 0.0026
+    }
+  ]
+}

@@ -76,8 +76,12 @@ def test_disabled_reason_is_actionable() -> None:
     assert "GOOGLE_API_KEY" in reason
     assert "ollama" in reason.lower()
 
+    # The 'none' message must serve both deployment shapes: the full stack has
+    # a local model, a lightweight cloud deployment does not.
     none_reason = Settings(llm_provider=LLMProvider.NONE).llm_disabled_reason
-    assert "ollama" in none_reason.lower()
+    assert "docker compose up" in none_reason.lower()
+    assert "openai" in none_reason.lower()
+    assert "every other section" in none_reason.lower()
 
 
 def test_llm_api_key_follows_provider() -> None:

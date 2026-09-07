@@ -237,8 +237,11 @@ class Settings(BaseSettings):
             return ""
         if self.llm_provider is LLMProvider.NONE:
             return (
-                "LLM_PROVIDER is set to 'none'. Set LLM_PROVIDER=ollama to use the "
-                "bundled local model (no API key required)."
+                "Chat is switched off (LLM_PROVIDER=none). Two ways to enable it: run the "
+                "full stack with `docker compose up`, which includes a local model and needs "
+                "no API key; or on a lightweight deployment set LLM_PROVIDER to openai, "
+                "anthropic or gemini and supply that provider's key. Every other section of "
+                "the app works either way."
             )
         key_variable = {
             LLMProvider.OPENAI: "OPENAI_API_KEY",

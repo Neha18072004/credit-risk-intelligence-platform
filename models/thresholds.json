@@ -1,0 +1,36 @@
+{
+  "decision_threshold": 0.2,
+  "decision_precision": 0.2698,
+  "decision_recall": 0.6698,
+  "decision_f1": 0.3846,
+  "f2_optimal_threshold": 0.129412,
+  "f2_optimal_recall": 0.7196,
+  "band_low_max": 0.08025,
+  "band_medium_max": 0.2,
+  "band_definition": "Low: predicted default probability at or below the portfolio base rate. Medium: above the base rate but below the tuned decision threshold. High: at or above the tuned decision threshold, i.e. the population the model refers for review.",
+  "band_profile": [
+    {
+      "band": "Low",
+      "n": 2942,
+      "population_share": 73.55,
+      "default_rate": 2.62,
+      "share_of_all_defaults": 23.99
+    },
+    {
+      "band": "Medium",
+      "n": 291,
+      "population_share": 7.28,
+      "default_rate": 12.03,
+      "share_of_all_defaults": 10.9
+    },
+    {
+      "band": "High",
+      "n": 767,
+      "population_share": 19.18,
+      "default_rate": 27.25,
+      "share_of_all_defaults": 65.11
+    }
+  ],
+  "calibration_method": "isotonic",
+  "risk_score_scale": 1000
+}

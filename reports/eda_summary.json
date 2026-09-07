@@ -1,0 +1,12 @@
+{
+  "n_rows": 307511,
+  "n_columns": 179,
+  "memory_mb": 663.38,
+  "n_bureau_features": 25,
+  "columns_with_missing": 120,
+  "overall_missing_pct": 19.54,
+  "n_defaults": 24825,
+  "default_rate": 0.0807,
+  "imbalance_ratio": 11.4,
+  "n_applicants": 307511
+}

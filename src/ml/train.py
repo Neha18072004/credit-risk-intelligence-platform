@@ -792,6 +792,18 @@ def train(
         100 * labels.mean(), scale_pos_weight,
     )
 
+    # CatBoost is a bake-off candidate but not a serving dependency, so the
+    # slim deployment profile omits it. Skip it rather than fail: a two-way
+    # comparison is still a comparison, and the shipped model is LightGBM.
+    import importlib.util
+
+    if "catboost" in names and importlib.util.find_spec("catboost") is None:
+        logger.warning(
+            "CatBoost is not installed; excluding it from the bake-off. "
+            "Install it with `pip install catboost` for the full three-way comparison."
+        )
+        names = [name for name in names if name != "catboost"]
+
     # --- optional hyperparameter search -----------------------------------
     should_tune = settings.tune_hyperparameters if tune is None else tune
     tuning: dict[str, dict[str, Any]] = {}

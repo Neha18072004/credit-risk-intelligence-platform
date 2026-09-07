@@ -1,0 +1,105 @@
+SURROGATE POLICY RULES
+==============================================================================
+Fidelity to the deployed model: R^2 0.556, band agreement 73.1%
+Tree depth 4, 13 rules
+
+RULE 1  --  covers 1,930 applicants (3.9% of the book)
+  IF   average external credit score <= 0.395
+  AND  combined external credit score <= 0.023
+  AND  average external credit score <= 0.247
+  THEN predicted default risk 31.2%  ->  High risk band
+       observed default rate in this group: 30.7%
+
+RULE 2  --  covers 1,694 applicants (3.4% of the book)
+  IF   average external credit score <= 0.395
+  AND  combined external credit score <= 0.023
+  AND  average external credit score > 0.247
+  THEN predicted default risk 20.8%  ->  High risk band
+       observed default rate in this group: 20.2%
+
+RULE 3  --  covers 1,722 applicants (3.4% of the book)
+  IF   average external credit score <= 0.395
+  AND  combined external credit score > 0.023
+  AND  goods-value-to-loan ratio <= 0.826
+  THEN predicted default risk 20.6%  ->  High risk band
+       observed default rate in this group: 19.5%
+
+RULE 4  --  covers 2,587 applicants (5.2% of the book)
+  IF   average external credit score <= 0.395
+  AND  combined external credit score > 0.023
+  AND  goods-value-to-loan ratio > 0.826
+  AND  share of adult life in current job <= 0.120
+  THEN predicted default risk 16.3%  ->  Medium risk band
+       observed default rate in this group: 15.3%
+
+RULE 6  --  covers 2,763 applicants (5.5% of the book)
+  IF   average external credit score > 0.395
+  AND  average external credit score <= 0.518
+  AND  goods-value-to-loan ratio <= 0.863
+  AND  implied loan term in years <= 21.456
+  THEN predicted default risk 12.6%  ->  Medium risk band
+       observed default rate in this group: 11.6%
+
+RULE 5  --  covers 2,866 applicants (5.7% of the book)
+  IF   average external credit score <= 0.395
+  AND  combined external credit score > 0.023
+  AND  goods-value-to-loan ratio > 0.826
+  AND  share of adult life in current job > 0.120
+  THEN predicted default risk 12.1%  ->  Medium risk band
+       observed default rate in this group: 11.9%
+
+RULE 9  --  covers 2,674 applicants (5.3% of the book)
+  IF   average external credit score > 0.395
+  AND  average external credit score <= 0.518
+  AND  goods-value-to-loan ratio > 0.863
+  AND  share of instalments paid late > 0.076
+  THEN predicted default risk 9.0%  ->  Medium risk band
+       observed default rate in this group: 8.3%
+
+RULE 7  --  covers 2,474 applicants (4.9% of the book)
+  IF   average external credit score > 0.395
+  AND  average external credit score <= 0.518
+  AND  goods-value-to-loan ratio <= 0.863
+  AND  implied loan term in years > 21.456
+  THEN predicted default risk 8.3%  ->  Medium risk band
+       observed default rate in this group: 7.8%
+
+RULE 11  --  covers 3,430 applicants (6.9% of the book)
+  IF   average external credit score > 0.395
+  AND  average external credit score > 0.518
+  AND  combined external credit score <= 0.195
+  AND  share of instalments paid late > 0.091
+  THEN predicted default risk 7.1%  ->  Low risk band
+       observed default rate in this group: 6.2%
+
+RULE 8  --  covers 5,465 applicants (10.9% of the book)
+  IF   average external credit score > 0.395
+  AND  average external credit score <= 0.518
+  AND  goods-value-to-loan ratio > 0.863
+  AND  share of instalments paid late <= 0.076
+  THEN predicted default risk 6.2%  ->  Low risk band
+       observed default rate in this group: 6.2%
+
+RULE 10  --  covers 9,566 applicants (19.1% of the book)
+  IF   average external credit score > 0.395
+  AND  average external credit score > 0.518
+  AND  combined external credit score <= 0.195
+  AND  share of instalments paid late <= 0.091
+  THEN predicted default risk 4.5%  ->  Low risk band
+       observed default rate in this group: 4.2%
+
+RULE 13  --  covers 4,360 applicants (8.7% of the book)
+  IF   average external credit score > 0.395
+  AND  average external credit score > 0.518
+  AND  combined external credit score > 0.195
+  AND  average days past due > 0.134
+  THEN predicted default risk 3.4%  ->  Low risk band
+       observed default rate in this group: 3.4%
+
+RULE 12  --  covers 8,469 applicants (16.9% of the book)
+  IF   average external credit score > 0.395
+  AND  average external credit score > 0.518
+  AND  combined external credit score > 0.195
+  AND  average days past due <= 0.134
+  THEN predicted default risk 2.2%  ->  Low risk band
+       observed default rate in this group: 2.2%

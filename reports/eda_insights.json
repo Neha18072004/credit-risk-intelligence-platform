@@ -1,0 +1,56 @@
+[
+  {
+    "key": "class_imbalance",
+    "title": "Defaults are rare, so the metric must be chosen with care",
+    "takeaway": "Only 8.1% of applicants default, a 11:1 imbalance. Accuracy is meaningless here -- a model predicting 'everyone repays' scores 91.9%. This is why the project leads with PR-AUC, weights the positive class rather than oversampling it, and tunes decision thresholds instead of using 0.5.",
+    "figure": "01_class_imbalance.png"
+  },
+  {
+    "key": "missing_data",
+    "title": "Missing data is structural, not random",
+    "takeaway": "41 columns are more than half empty, led by COMMONAREA_MODE at 70%. Most are optional property attributes. Critically, EXT_SOURCE_1 -- one of the strongest predictors -- is missing for the majority of applicants, which is exactly why the model uses the mean/min/count of the three external scores rather than any single one. Missingness is kept, not imputed away: for tree models an absent value is a usable branch, and a thin file is real risk information.",
+    "figure": "02_missing_data.png"
+  },
+  {
+    "key": "feature_landscape",
+    "title": "The portfolio's feature landscape",
+    "takeaway": "The 179 columns split into 118 numeric, 16 categorical, 38 binary and 5 date-like fields. By domain, the largest block is property (47 columns). Property attributes and document flags dominate by count but carry little signal, while the small external-score and financial blocks carry most of it -- so feature count is a poor guide to feature value.",
+    "figure": "03_feature_landscape.png"
+  },
+  {
+    "key": "external_scores",
+    "title": "External credit scores dominate default risk",
+    "takeaway": "Applicants in the lowest external-score band default at 18.7%, versus 2.5% in the highest -- a 7.6x spread across an evenly-sized split of the book, and the decline is monotonic across every band, which is what makes it trustworthy for policy. This is the strongest single signal available. Practical use: the bottom band warrants manual review or a pricing uplift, and an applicant missing all three external scores should be routed to manual assessment rather than scored on the remaining fields.",
+    "figure": "04_external_scores.png"
+  },
+  {
+    "key": "affordability",
+    "title": "The instalment burden separates risk; loan size alone does not",
+    "takeaway": "Loan-to-income is not monotonic at all: it peaks at 8.9% in the 2.76-3.91 band while both extremes sit lower (7.3% and 7.3%). Instalment-to-income rises with leverage, from 7.2% to 8.7%. The shape of the loan-to-income curve is worth pausing on: the most heavily leveraged applicants are not the riskiest. The likeliest reason is that very high loan-to-income ratios pick up secured and longer-term products rather than distressed borrowing -- which is exactly why the raw ratio makes a poor decline rule on its own. Practical use: constrain affordability on the *instalment* relative to income, not on loan size relative to income. A large loan repaid over a long term can be more affordable than a small one repaid quickly, and only the instalment ratio captures that.",
+    "figure": "05_affordability.png"
+  },
+  {
+    "key": "employment_anomaly",
+    "title": "The employment anomaly encodes a real population",
+    "takeaway": "18% of applicants carry DAYS_EMPLOYED = 365243, which is not 1000 years of work but a sentinel for 'no employment record' -- and it maps almost perfectly onto pensioners. That group defaults at 5.4%, against 8.7% for applicants with a recorded job. Among applicants who do have a record, tenure length itself separates risk further. Left untreated the sentinel would dominate every tree split and destroy any coefficient on tenure, so it is nulled and replaced with an explicit flag. Practical use: pensioners need their own scorecard treatment -- their risk is driven by pension stability, not job tenure.",
+    "figure": "06_employment_anomaly.png"
+  },
+  {
+    "key": "demographic_segments",
+    "title": "Customer attributes give stable policy segments",
+    "takeaway": "Education spreads default risk from 1.8% (Academic degree, n=164) to 10.9% (Lower secondary, n=3,816). The gap is wider than the sampling error on either end. Family status and contract type separate less sharply. Practical use: these are stable, verifiable attributes suited to policy segmentation -- but each is a proxy for income stability rather than a cause of default, so they belong in pricing tiers and review triggers, not hard decline rules, and must be checked against fair-lending constraints before any use in a decision.",
+    "figure": "07_demographic_segments.png"
+  },
+  {
+    "key": "credit_history",
+    "title": "External credit history is the most actionable signal",
+    "takeaway": "Applicants with prior arrears default at 15.9% -- 2.1x the rate of a clean external record, with non-overlapping confidence intervals (7.6%). Outstanding leverage tells the same story: the default rate climbs steadily with the share of external credit still unpaid. Thin-file applicants, with no bureau record at all, sit at 10.1%, which is why their nulls are preserved and flagged rather than imputed -- 'no history' is a distinct risk state, not a missing value to fill in. Practical use: prior arrears is the most defensible decline or referral trigger in the feature set, because it is behavioural rather than demographic and is externally verifiable -- though prior conduct on *our own* loans, covered in the next insight, is more defensible still.",
+    "figure": "08_credit_history.png"
+  },
+  {
+    "key": "repayment_behaviour",
+    "title": "Prior repayment behaviour is the most defensible signal",
+    "takeaway": "Applicants who have ever paid one of our instalments late default at 9.4%, against 6.8% for those who always paid on time -- 1.4x. The gap is smaller than the external-score spread, and that is the point: this is not the *largest* signal, it is the most **defensible** one. Every other strong feature is a proxy -- education stands in for income stability, an external score summarises another institution's judgement -- whereas this is the applicant's own conduct on their own obligations, recorded by us and auditable. Practical use: a prior late-payment record is the cleanest basis for a referral rule, and it survives fair-lending scrutiny in a way demographic proxies do not.",
+    "figure": "09_repayment_behaviour.png"
+  }
+]

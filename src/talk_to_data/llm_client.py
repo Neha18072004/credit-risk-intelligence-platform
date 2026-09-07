@@ -267,12 +267,27 @@ class OllamaClient(LLMClient):
 # --------------------------------------------------------------------------- #
 # Hosted providers (optional overrides)
 # --------------------------------------------------------------------------- #
+def _sdk_installed(module: str) -> bool:
+    """Whether an optional provider SDK is importable."""
+    import importlib.util
+
+    return importlib.util.find_spec(module) is not None
+
+
 class OpenAIClient(LLMClient):
     """OpenAI chat completions."""
 
     provider_name = "openai"
+    sdk_module = "openai"
+    sdk_package = "openai"
 
     def is_available(self) -> tuple[bool, str]:
+        if not _sdk_installed(self.sdk_module):
+            return False, (
+                f"The {self.provider_name} SDK is not installed. It is an optional extra, "
+                f"since the default provider is the bundled local model: "
+                f"`pip install {self.sdk_package}`, or use LLM_PROVIDER=ollama."
+            )
         if not settings.openai_api_key:
             return False, "OPENAI_API_KEY is not set."
         return True, f"OpenAI ready with '{self.model_name}'."
@@ -308,8 +323,16 @@ class AnthropicClient(LLMClient):
     """Anthropic messages API."""
 
     provider_name = "anthropic"
+    sdk_module = "anthropic"
+    sdk_package = "anthropic"
 
     def is_available(self) -> tuple[bool, str]:
+        if not _sdk_installed(self.sdk_module):
+            return False, (
+                f"The {self.provider_name} SDK is not installed. It is an optional extra, "
+                f"since the default provider is the bundled local model: "
+                f"`pip install {self.sdk_package}`, or use LLM_PROVIDER=ollama."
+            )
         if not settings.anthropic_api_key:
             return False, "ANTHROPIC_API_KEY is not set."
         return True, f"Anthropic ready with '{self.model_name}'."
@@ -345,8 +368,16 @@ class GeminiClient(LLMClient):
     """Google Gemini."""
 
     provider_name = "gemini"
+    sdk_module = "google.generativeai"
+    sdk_package = "google-generativeai"
 
     def is_available(self) -> tuple[bool, str]:
+        if not _sdk_installed(self.sdk_module):
+            return False, (
+                f"The {self.provider_name} SDK is not installed. It is an optional extra, "
+                f"since the default provider is the bundled local model: "
+                f"`pip install {self.sdk_package}`, or use LLM_PROVIDER=ollama."
+            )
         if not settings.google_api_key:
             return False, "GOOGLE_API_KEY is not set."
         return True, f"Gemini ready with '{self.model_name}'."
@@ -430,6 +461,17 @@ def get_llm_client(provider: LLMProvider | None = None) -> LLMClient:
     client_type = _CLIENTS.get(selected)
     if client_type is None:  # pragma: no cover - guarded by the settings enum
         return DisabledClient(f"Unknown LLM provider '{selected}'.")
+
+    # The hosted SDKs are optional extras, so a provider can be configured with
+    # a valid key while its library is simply not installed. Report that as the
+    # actionable message it is rather than an ImportError at request time.
+    module = getattr(client_type, "sdk_module", None)
+    if module and not _sdk_installed(module):
+        return DisabledClient(
+            f"LLM_PROVIDER is '{selected.value}' but its SDK is not installed. "
+            f"Install it with `pip install {client_type.sdk_package}`, or switch to "
+            "LLM_PROVIDER=ollama to use the bundled local model with no SDK and no key."
+        )
 
     logger.debug("Using %s provider with model %s", selected.value, settings.llm_model)
     return client_type()

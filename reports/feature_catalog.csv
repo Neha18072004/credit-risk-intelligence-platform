@@ -1,0 +1,180 @@
+column,type_bucket,domain,domain_covers,pct_missing,n_unique
+SK_ID_CURR,identifier,identifier,Keys used for joining; never used as model features.,0.0,307511
+TARGET,target,other,Everything not otherwise classified.,0.0,2
+NAME_CONTRACT_TYPE,categorical,application_process,How and when the application itself was made.,0.0,2
+CODE_GENDER,categorical,demographics,"Who the applicant is: age, gender, family, housing, occupation, region.",0.0,3
+FLAG_OWN_CAR,categorical,demographics,"Who the applicant is: age, gender, family, housing, occupation, region.",0.0,2
+FLAG_OWN_REALTY,categorical,demographics,"Who the applicant is: age, gender, family, housing, occupation, region.",0.0,2
+CNT_CHILDREN,numeric,demographics,"Who the applicant is: age, gender, family, housing, occupation, region.",0.0,15
+AMT_INCOME_TOTAL,numeric,financials,"Income, loan amount, instalment, and the affordability ratios derived from them.",0.0,2548
+AMT_CREDIT,numeric,financials,"Income, loan amount, instalment, and the affordability ratios derived from them.",0.0,5603
+AMT_ANNUITY,numeric,financials,"Income, loan amount, instalment, and the affordability ratios derived from them.",0.0,13672
+AMT_GOODS_PRICE,numeric,financials,"Income, loan amount, instalment, and the affordability ratios derived from them.",0.09,1002
+NAME_TYPE_SUITE,categorical,application_process,How and when the application itself was made.,0.42,7
+NAME_INCOME_TYPE,categorical,demographics,"Who the applicant is: age, gender, family, housing, occupation, region.",0.0,8
+NAME_EDUCATION_TYPE,categorical,demographics,"Who the applicant is: age, gender, family, housing, occupation, region.",0.0,5
+NAME_FAMILY_STATUS,categorical,demographics,"Who the applicant is: age, gender, family, housing, occupation, region.",0.0,6
+NAME_HOUSING_TYPE,categorical,demographics,"Who the applicant is: age, gender, family, housing, occupation, region.",0.0,6
+REGION_POPULATION_RELATIVE,numeric,demographics,"Who the applicant is: age, gender, family, housing, occupation, region.",0.0,81
+DAYS_BIRTH,date_like,demographics,"Who the applicant is: age, gender, family, housing, occupation, region.",0.0,17460
+DAYS_EMPLOYED,date_like,demographics,"Who the applicant is: age, gender, family, housing, occupation, region.",0.0,12574
+DAYS_REGISTRATION,date_like,demographics,"Who the applicant is: age, gender, family, housing, occupation, region.",0.0,15688
+DAYS_ID_PUBLISH,date_like,demographics,"Who the applicant is: age, gender, family, housing, occupation, region.",0.0,6168
+OWN_CAR_AGE,numeric,other,Everything not otherwise classified.,65.99,62
+FLAG_MOBIL,binary,demographics,"Who the applicant is: age, gender, family, housing, occupation, region.",0.0,2
+FLAG_EMP_PHONE,binary,demographics,"Who the applicant is: age, gender, family, housing, occupation, region.",0.0,2
+FLAG_WORK_PHONE,binary,demographics,"Who the applicant is: age, gender, family, housing, occupation, region.",0.0,2
+FLAG_CONT_MOBILE,binary,demographics,"Who the applicant is: age, gender, family, housing, occupation, region.",0.0,2
+FLAG_PHONE,binary,demographics,"Who the applicant is: age, gender, family, housing, occupation, region.",0.0,2
+FLAG_EMAIL,binary,demographics,"Who the applicant is: age, gender, family, housing, occupation, region.",0.0,2
+OCCUPATION_TYPE,categorical,demographics,"Who the applicant is: age, gender, family, housing, occupation, region.",31.35,18
+CNT_FAM_MEMBERS,numeric,demographics,"Who the applicant is: age, gender, family, housing, occupation, region.",0.0,17
+REGION_RATING_CLIENT,numeric,demographics,"Who the applicant is: age, gender, family, housing, occupation, region.",0.0,3
+REGION_RATING_CLIENT_W_CITY,numeric,demographics,"Who the applicant is: age, gender, family, housing, occupation, region.",0.0,3
+WEEKDAY_APPR_PROCESS_START,categorical,application_process,How and when the application itself was made.,0.0,7
+HOUR_APPR_PROCESS_START,numeric,application_process,How and when the application itself was made.,0.0,24
+REG_REGION_NOT_LIVE_REGION,binary,demographics,"Who the applicant is: age, gender, family, housing, occupation, region.",0.0,2
+REG_REGION_NOT_WORK_REGION,binary,demographics,"Who the applicant is: age, gender, family, housing, occupation, region.",0.0,2
+LIVE_REGION_NOT_WORK_REGION,binary,demographics,"Who the applicant is: age, gender, family, housing, occupation, region.",0.0,2
+REG_CITY_NOT_LIVE_CITY,binary,demographics,"Who the applicant is: age, gender, family, housing, occupation, region.",0.0,2
+REG_CITY_NOT_WORK_CITY,binary,demographics,"Who the applicant is: age, gender, family, housing, occupation, region.",0.0,2
+LIVE_CITY_NOT_WORK_CITY,binary,demographics,"Who the applicant is: age, gender, family, housing, occupation, region.",0.0,2
+ORGANIZATION_TYPE,categorical,demographics,"Who the applicant is: age, gender, family, housing, occupation, region.",0.0,58
+EXT_SOURCE_1,numeric,external_scores,"Third-party credit scores, the strongest single predictor in the dataset.",56.38,114584
+EXT_SOURCE_2,numeric,external_scores,"Third-party credit scores, the strongest single predictor in the dataset.",0.21,119831
+EXT_SOURCE_3,numeric,external_scores,"Third-party credit scores, the strongest single predictor in the dataset.",19.83,814
+APARTMENTS_AVG,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,50.75,2339
+BASEMENTAREA_AVG,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,58.52,3780
+YEARS_BEGINEXPLUATATION_AVG,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,48.78,285
+YEARS_BUILD_AVG,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,66.5,149
+COMMONAREA_AVG,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,69.87,3181
+ELEVATORS_AVG,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,53.3,257
+ENTRANCES_AVG,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,50.35,285
+FLOORSMAX_AVG,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,49.76,403
+FLOORSMIN_AVG,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,67.85,305
+LANDAREA_AVG,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,59.38,3527
+LIVINGAPARTMENTS_AVG,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,68.35,1868
+LIVINGAREA_AVG,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,50.19,5199
+NONLIVINGAPARTMENTS_AVG,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,69.43,386
+NONLIVINGAREA_AVG,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,55.18,3290
+APARTMENTS_MODE,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,50.75,760
+BASEMENTAREA_MODE,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,58.52,3841
+YEARS_BEGINEXPLUATATION_MODE,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,48.78,221
+YEARS_BUILD_MODE,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,66.5,154
+COMMONAREA_MODE,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,69.87,3128
+ELEVATORS_MODE,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,53.3,26
+ENTRANCES_MODE,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,50.35,30
+FLOORSMAX_MODE,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,49.76,25
+FLOORSMIN_MODE,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,67.85,25
+LANDAREA_MODE,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,59.38,3563
+LIVINGAPARTMENTS_MODE,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,68.35,736
+LIVINGAREA_MODE,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,50.19,5301
+NONLIVINGAPARTMENTS_MODE,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,69.43,167
+NONLIVINGAREA_MODE,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,55.18,3327
+APARTMENTS_MEDI,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,50.75,1148
+BASEMENTAREA_MEDI,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,58.52,3772
+YEARS_BEGINEXPLUATATION_MEDI,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,48.78,245
+YEARS_BUILD_MEDI,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,66.5,151
+COMMONAREA_MEDI,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,69.87,3202
+ELEVATORS_MEDI,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,53.3,46
+ENTRANCES_MEDI,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,50.35,46
+FLOORSMAX_MEDI,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,49.76,49
+FLOORSMIN_MEDI,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,67.85,47
+LANDAREA_MEDI,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,59.38,3560
+LIVINGAPARTMENTS_MEDI,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,68.35,1097
+LIVINGAREA_MEDI,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,50.19,5281
+NONLIVINGAPARTMENTS_MEDI,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,69.43,214
+NONLIVINGAREA_MEDI,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,55.18,3323
+FONDKAPREMONT_MODE,categorical,property,Building and dwelling attributes; largely optional and heavily missing.,68.39,4
+HOUSETYPE_MODE,categorical,property,Building and dwelling attributes; largely optional and heavily missing.,50.18,3
+TOTALAREA_MODE,numeric,property,Building and dwelling attributes; largely optional and heavily missing.,48.27,5116
+WALLSMATERIAL_MODE,categorical,property,Building and dwelling attributes; largely optional and heavily missing.,50.84,7
+EMERGENCYSTATE_MODE,categorical,property,Building and dwelling attributes; largely optional and heavily missing.,47.4,2
+OBS_30_CNT_SOCIAL_CIRCLE,numeric,other,Everything not otherwise classified.,0.33,33
+DEF_30_CNT_SOCIAL_CIRCLE,numeric,repayment_behaviour,"How prior credit was repaid: arrears, days past due, overdue amounts, prolongations.",0.33,10
+OBS_60_CNT_SOCIAL_CIRCLE,numeric,other,Everything not otherwise classified.,0.33,33
+DEF_60_CNT_SOCIAL_CIRCLE,numeric,repayment_behaviour,"How prior credit was repaid: arrears, days past due, overdue amounts, prolongations.",0.33,9
+DAYS_LAST_PHONE_CHANGE,date_like,demographics,"Who the applicant is: age, gender, family, housing, occupation, region.",0.0,3773
+FLAG_DOCUMENT_2,binary,documents,Which supporting documents the applicant submitted.,0.0,2
+FLAG_DOCUMENT_3,binary,documents,Which supporting documents the applicant submitted.,0.0,2
+FLAG_DOCUMENT_4,binary,documents,Which supporting documents the applicant submitted.,0.0,2
+FLAG_DOCUMENT_5,binary,documents,Which supporting documents the applicant submitted.,0.0,2
+FLAG_DOCUMENT_6,binary,documents,Which supporting documents the applicant submitted.,0.0,2
+FLAG_DOCUMENT_7,binary,documents,Which supporting documents the applicant submitted.,0.0,2
+FLAG_DOCUMENT_8,binary,documents,Which supporting documents the applicant submitted.,0.0,2
+FLAG_DOCUMENT_9,binary,documents,Which supporting documents the applicant submitted.,0.0,2
+FLAG_DOCUMENT_10,binary,documents,Which supporting documents the applicant submitted.,0.0,2
+FLAG_DOCUMENT_11,binary,documents,Which supporting documents the applicant submitted.,0.0,2
+FLAG_DOCUMENT_12,binary,documents,Which supporting documents the applicant submitted.,0.0,2
+FLAG_DOCUMENT_13,binary,documents,Which supporting documents the applicant submitted.,0.0,2
+FLAG_DOCUMENT_14,binary,documents,Which supporting documents the applicant submitted.,0.0,2
+FLAG_DOCUMENT_15,binary,documents,Which supporting documents the applicant submitted.,0.0,2
+FLAG_DOCUMENT_16,binary,documents,Which supporting documents the applicant submitted.,0.0,2
+FLAG_DOCUMENT_17,binary,documents,Which supporting documents the applicant submitted.,0.0,2
+FLAG_DOCUMENT_18,binary,documents,Which supporting documents the applicant submitted.,0.0,2
+FLAG_DOCUMENT_19,binary,documents,Which supporting documents the applicant submitted.,0.0,2
+FLAG_DOCUMENT_20,binary,documents,Which supporting documents the applicant submitted.,0.0,2
+FLAG_DOCUMENT_21,binary,documents,Which supporting documents the applicant submitted.,0.0,2
+AMT_REQ_CREDIT_BUREAU_HOUR,numeric,credit_history,"What external credit exists: how many prior credits, how much, how long.",13.5,5
+AMT_REQ_CREDIT_BUREAU_DAY,numeric,credit_history,"What external credit exists: how many prior credits, how much, how long.",13.5,9
+AMT_REQ_CREDIT_BUREAU_WEEK,numeric,credit_history,"What external credit exists: how many prior credits, how much, how long.",13.5,9
+AMT_REQ_CREDIT_BUREAU_MON,numeric,credit_history,"What external credit exists: how many prior credits, how much, how long.",13.5,24
+AMT_REQ_CREDIT_BUREAU_QRT,numeric,credit_history,"What external credit exists: how many prior credits, how much, how long.",13.5,11
+AMT_REQ_CREDIT_BUREAU_YEAR,numeric,credit_history,"What external credit exists: how many prior credits, how much, how long.",13.5,25
+BUREAU_LOAN_COUNT,numeric,credit_history,"What external credit exists: how many prior credits, how much, how long.",0.0,61
+BUREAU_ACTIVE_COUNT,numeric,credit_history,"What external credit exists: how many prior credits, how much, how long.",14.31,23
+BUREAU_CLOSED_COUNT,numeric,credit_history,"What external credit exists: how many prior credits, how much, how long.",14.31,54
+BUREAU_CREDIT_TYPE_NUNIQUE,numeric,credit_history,"What external credit exists: how many prior credits, how much, how long.",14.31,6
+BUREAU_CREDIT_SUM_TOTAL,numeric,credit_history,"What external credit exists: how many prior credits, how much, how long.",14.31,205644
+BUREAU_CREDIT_SUM_MEAN,numeric,credit_history,"What external credit exists: how many prior credits, how much, how long.",14.32,209604
+BUREAU_CREDIT_SUM_MAX,numeric,credit_history,"What external credit exists: how many prior credits, how much, how long.",14.32,65160
+BUREAU_DEBT_TOTAL,numeric,credit_history,"What external credit exists: how many prior credits, how much, how long.",14.31,155004
+BUREAU_DEBT_MEAN,numeric,credit_history,"What external credit exists: how many prior credits, how much, how long.",16.71,169333
+BUREAU_CREDIT_LIMIT_TOTAL,numeric,credit_history,"What external credit exists: how many prior credits, how much, how long.",14.31,37290
+BUREAU_DAYS_OVERDUE_MEAN,numeric,repayment_behaviour,"How prior credit was repaid: arrears, days past due, overdue amounts, prolongations.",14.31,1541
+BUREAU_DAYS_OVERDUE_MAX,numeric,repayment_behaviour,"How prior credit was repaid: arrears, days past due, overdue amounts, prolongations.",14.31,868
+BUREAU_OVERDUE_LOAN_COUNT,numeric,repayment_behaviour,"How prior credit was repaid: arrears, days past due, overdue amounts, prolongations.",14.31,8
+BUREAU_AMT_OVERDUE_TOTAL,numeric,repayment_behaviour,"How prior credit was repaid: arrears, days past due, overdue amounts, prolongations.",14.31,1218
+BUREAU_MAX_OVERDUE_MEAN,numeric,repayment_behaviour,"How prior credit was repaid: arrears, days past due, overdue amounts, prolongations.",40.2,55318
+BUREAU_PROLONG_TOTAL,numeric,repayment_behaviour,"How prior credit was repaid: arrears, days past due, overdue amounts, prolongations.",14.31,10
+BUREAU_DAYS_CREDIT_MIN,numeric,credit_history,"What external credit exists: how many prior credits, how much, how long.",14.31,2922
+BUREAU_DAYS_CREDIT_MAX,numeric,credit_history,"What external credit exists: how many prior credits, how much, how long.",14.31,2923
+BUREAU_DAYS_CREDIT_MEAN,numeric,credit_history,"What external credit exists: how many prior credits, how much, how long.",14.31,64556
+BUREAU_DAYS_UPDATE_MEAN,numeric,credit_history,"What external credit exists: how many prior credits, how much, how long.",14.31,55038
+BUREAU_ANNUITY_TOTAL,numeric,credit_history,"What external credit exists: how many prior credits, how much, how long.",14.31,36098
+BUREAU_DEBT_CREDIT_RATIO,numeric,credit_history,"What external credit exists: how many prior credits, how much, how long.",14.67,184778
+BUREAU_ACTIVE_RATIO,numeric,credit_history,"What external credit exists: how many prior credits, how much, how long.",14.31,296
+BUREAU_HAS_OVERDUE,binary,repayment_behaviour,"How prior credit was repaid: arrears, days past due, overdue amounts, prolongations.",14.31,2
+BUREAU_HAS_HISTORY,binary,credit_history,"What external credit exists: how many prior credits, how much, how long.",0.0,2
+PREV_COUNT,numeric,other,Everything not otherwise classified.,5.35,65
+PREV_APPROVED_COUNT,numeric,other,Everything not otherwise classified.,5.35,26
+PREV_REFUSED_COUNT,numeric,other,Everything not otherwise classified.,5.35,46
+PREV_CANCELLED_COUNT,numeric,other,Everything not otherwise classified.,5.35,38
+PREV_AMT_APPLICATION_MEAN,numeric,other,Everything not otherwise classified.,5.35,191770
+PREV_AMT_APPLICATION_MAX,numeric,other,Everything not otherwise classified.,5.35,48662
+PREV_AMT_CREDIT_MEAN,numeric,other,Everything not otherwise classified.,5.35,210634
+PREV_AMT_ANNUITY_MEAN,numeric,other,Everything not otherwise classified.,5.49,268978
+PREV_DOWN_PAYMENT_RATE_MEAN,numeric,other,Everything not otherwise classified.,11.03,166782
+PREV_DAYS_DECISION_MAX,numeric,other,Everything not otherwise classified.,5.35,2922
+PREV_DAYS_DECISION_MIN,numeric,other,Everything not otherwise classified.,5.35,2921
+PREV_CNT_PAYMENT_MEAN,numeric,other,Everything not otherwise classified.,5.49,2838
+PREV_REFUSED_RATE,numeric,other,Everything not otherwise classified.,5.35,397
+PREV_APPROVED_RATE,numeric,other,Everything not otherwise classified.,5.35,362
+PREV_CREDIT_TO_APPLICATION,numeric,other,Everything not otherwise classified.,5.68,256135
+PREV_EVER_REFUSED,binary,other,Everything not otherwise classified.,5.35,2
+PREV_HAS_HISTORY,binary,other,Everything not otherwise classified.,0.0,2
+INST_COUNT,numeric,other,Everything not otherwise classified.,5.16,319
+INST_DPD_MEAN,numeric,repayment_behaviour,"How prior credit was repaid: arrears, days past due, overdue amounts, prolongations.",5.16,23566
+INST_DPD_MAX,numeric,repayment_behaviour,"How prior credit was repaid: arrears, days past due, overdue amounts, prolongations.",5.16,1642
+INST_DPD_SUM,numeric,repayment_behaviour,"How prior credit was repaid: arrears, days past due, overdue amounts, prolongations.",5.16,2077
+INST_LATE_COUNT,numeric,other,Everything not otherwise classified.,5.16,102
+INST_PAYMENT_RATIO_MEAN,numeric,other,Everything not otherwise classified.,5.16,135438
+INST_PAYMENT_RATIO_MIN,numeric,other,Everything not otherwise classified.,5.16,117643
+INST_UNDERPAID_COUNT,numeric,other,Everything not otherwise classified.,5.16,120
+INST_SHORTFALL_SUM,numeric,other,Everything not otherwise classified.,5.16,112797
+INST_AMT_PAYMENT_SUM,numeric,other,Everything not otherwise classified.,5.16,287570
+INST_DAYS_LAST_INSTALMENT,numeric,other,Everything not otherwise classified.,5.16,2918
+INST_LATE_RATE,numeric,other,Everything not otherwise classified.,5.16,4972
+INST_UNDERPAID_RATE,numeric,other,Everything not otherwise classified.,5.16,5294
+INST_EVER_LATE,binary,other,Everything not otherwise classified.,5.16,2
+INST_HAS_HISTORY,binary,other,Everything not otherwise classified.,0.0,2
