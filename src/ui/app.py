@@ -34,25 +34,52 @@ import pandas as pd
 import streamlit as st
 
 
+# set_page_config must be the very first Streamlit command in the script, and
+# reading st.secrets counts as a command -- so the page config is issued here,
+# before the secrets bridge and before any module that reads settings.
+st.set_page_config(
+    page_title="Credit Risk Intelligence Platform",
+    page_icon="",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# Settings this application understands. Anything else in the secrets store is
+# ignored rather than blindly exported into the process environment.
+_CONFIG_KEYS: tuple[str, ...] = (
+    "DATA_MODE", "USE_SQLITE_FALLBACK", "SQLITE_PATH", "LOG_LEVEL", "ENVIRONMENT",
+    "POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_USER", "POSTGRES_PASSWORD",
+    "POSTGRES_DB", "POSTGRES_READONLY_USER", "POSTGRES_READONLY_PASSWORD",
+    "LLM_PROVIDER", "LLM_MODEL", "LLM_TIMEOUT_SECONDS", "LLM_TEMPERATURE",
+    "OLLAMA_BASE_URL", "OLLAMA_FALLBACK_MODEL",
+    "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY",
+    "SQL_MAX_ROWS", "SQL_TIMEOUT_SECONDS", "MEMORY_MAX_TURNS",
+    "INCLUDE_BUREAU", "INCLUDE_PREVIOUS_APPLICATION", "INCLUDE_INSTALLMENTS",
+)
+
+
 def _apply_streamlit_secrets() -> None:
     """Copy Streamlit secrets into the environment before settings are read.
 
-    Managed platforms supply configuration as a secrets file rather than real
-    environment variables, but this project's settings object reads the
-    environment and is constructed at import time. So the bridge has to run
+    Managed platforms supply configuration through the secrets store rather
+    than real environment variables, but this project's settings object reads
+    the environment and is built at import time, so the bridge has to run
     before any module that imports ``settings``.
 
-    The file is parsed directly with ``tomllib`` rather than through
-    ``st.secrets``: touching the Streamlit API counts as issuing a Streamlit
-    command, and ``set_page_config()`` must be the first one. Reading the file
-    ourselves keeps this a plain filesystem operation.
+    Both sources are consulted. ``st.secrets`` is what Streamlit Community
+    Cloud actually populates -- an earlier version read only a secrets.toml
+    file, which does not exist there, so every setting silently fell back to
+    its default and the deployed app tried to reach PostgreSQL on localhost
+    with no PostgreSQL running. A file is still read as well, for platforms
+    that provide one.
 
     Existing environment variables win, so a container's own configuration is
-    never overridden by a secrets file that happens to be present.
+    never overridden.
     """
+    collected: dict[str, str] = {}
+
     import tomllib
 
-    secrets: dict[str, object] = {}
     for candidate in (
         PROJECT_ROOT / ".streamlit" / "secrets.toml",
         Path.home() / ".streamlit" / "secrets.toml",
@@ -60,22 +87,21 @@ def _apply_streamlit_secrets() -> None:
         try:
             if candidate.is_file():
                 with candidate.open("rb") as handle:
-                    secrets.update(tomllib.load(handle))
+                    for key, value in tomllib.load(handle).items():
+                        collected[str(key)] = str(value)
         except Exception:  # noqa: BLE001 - a malformed file must not stop the app
             continue
-    if not secrets:
-        return
 
-    for key in (
-        "DATA_MODE", "USE_SQLITE_FALLBACK", "SQLITE_PATH", "LOG_LEVEL",
-        "POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_USER", "POSTGRES_PASSWORD",
-        "POSTGRES_DB", "POSTGRES_READONLY_USER", "POSTGRES_READONLY_PASSWORD",
-        "LLM_PROVIDER", "LLM_MODEL", "LLM_TIMEOUT_SECONDS", "OLLAMA_BASE_URL",
-        "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY",
-        "SQL_MAX_ROWS", "SQL_TIMEOUT_SECONDS", "MEMORY_MAX_TURNS",
-    ):
-        if key in secrets and key not in os.environ:
-            os.environ[key] = str(secrets[key])
+    try:
+        for key in _CONFIG_KEYS:
+            if key in st.secrets:
+                collected[key] = str(st.secrets[key])
+    except Exception:  # noqa: BLE001 - no secrets configured is the normal local case
+        pass
+
+    for key, value in collected.items():
+        if key in _CONFIG_KEYS and key not in os.environ:
+            os.environ[key] = value
 
 
 _apply_streamlit_secrets()
@@ -85,13 +111,6 @@ from src.utils.logger import get_logger
 from src.utils.viz import RISK_BAND_COLORS
 
 logger = get_logger(__name__)
-
-st.set_page_config(
-    page_title=settings.app_name,
-    page_icon="",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
 
 # Band colours are the reserved status palette. They always appear beside the
 # band's own name -- colour never carries the meaning by itself.
