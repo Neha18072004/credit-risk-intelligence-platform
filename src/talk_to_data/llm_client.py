@@ -365,47 +365,75 @@ class AnthropicClient(LLMClient):
 
 
 class GeminiClient(LLMClient):
-    """Google Gemini."""
+    """Google Gemini, over its REST API.
+
+    Deliberately not the ``google-generativeai`` SDK. That package pulls in the
+    gRPC and protobuf stack -- roughly 150MB installed -- which is a real cost
+    on a managed platform with a 1GB memory limit, and a slow, failure-prone
+    step in a build. The REST endpoint needs nothing beyond the standard
+    library, exactly as the local Ollama client does.
+    """
 
     provider_name = "gemini"
-    sdk_module = "google.generativeai"
-    sdk_package = "google-generativeai"
+    base_url = "https://generativelanguage.googleapis.com/v1beta"
 
     def is_available(self) -> tuple[bool, str]:
-        if not _sdk_installed(self.sdk_module):
-            return False, (
-                f"The {self.provider_name} SDK is not installed. It is an optional extra, "
-                f"since the default provider is the bundled local model: "
-                f"`pip install {self.sdk_package}`, or use LLM_PROVIDER=ollama."
-            )
         if not settings.google_api_key:
-            return False, "GOOGLE_API_KEY is not set."
+            return False, (
+                "GOOGLE_API_KEY is not set. Get a free key at aistudio.google.com, or "
+                "use LLM_PROVIDER=ollama to run the bundled local model with no key."
+            )
         return True, f"Gemini ready with '{self.model_name}'."
 
     def complete(self, system_prompt: str, user_prompt: str) -> LLMResponse:
         if not settings.google_api_key:
             raise LLMUnavailableError("GOOGLE_API_KEY is not set.")
-        import google.generativeai as genai
 
-        genai.configure(api_key=settings.google_api_key)
-        model = genai.GenerativeModel(
-            model_name=self.model_name, system_instruction=system_prompt
+        url = (
+            f"{self.base_url}/models/{self.model_name}:generateContent"
+            f"?key={settings.google_api_key}"
         )
-        started = time.perf_counter()
-        response = model.generate_content(
-            user_prompt,
-            generation_config={
+        payload = {
+            "system_instruction": {"parts": [{"text": system_prompt}]},
+            "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
+            "generationConfig": {
                 "temperature": settings.llm_temperature,
-                "max_output_tokens": settings.llm_max_tokens,
+                "maxOutputTokens": settings.llm_max_tokens,
             },
+        }
+        request = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
         )
-        usage = getattr(response, "usage_metadata", None)
+
+        started = time.perf_counter()
+        try:
+            with urllib.request.urlopen(request, timeout=settings.llm_timeout_seconds) as response:
+                body = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as error:
+            detail = error.read().decode("utf-8", "replace")[:200]
+            raise LLMUnavailableError(
+                f"Gemini returned HTTP {error.code}: {detail}"
+            ) from error
+        except (urllib.error.URLError, OSError, TimeoutError) as error:
+            raise LLMUnavailableError(f"Could not reach the Gemini API: {error}") from error
+
+        candidates = body.get("candidates") or []
+        text = ""
+        if candidates:
+            # Concatenate the parts: a response can be split across several.
+            parts = candidates[0].get("content", {}).get("parts") or []
+            text = "".join(part.get("text", "") for part in parts)
+
+        usage = body.get("usageMetadata", {})
         return LLMResponse(
-            text=(response.text or "").strip(),
+            text=text.strip(),
             provider=self.provider_name,
             model=self.model_name,
-            prompt_tokens=getattr(usage, "prompt_token_count", 0) or 0,
-            completion_tokens=getattr(usage, "candidates_token_count", 0) or 0,
+            prompt_tokens=int(usage.get("promptTokenCount", 0)),
+            completion_tokens=int(usage.get("candidatesTokenCount", 0)),
             latency_seconds=time.perf_counter() - started,
         )
 

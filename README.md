@@ -190,7 +190,14 @@ provider and add its key — the local model cannot run on a managed platform:
 ```toml
 LLM_PROVIDER = "gemini"          # or "openai" / "anthropic"
 GOOGLE_API_KEY = "your-key-here"
+LLM_MODEL = "gemini-2.5-flash"
 ```
+
+Gemini is reached over its REST API, not the `google-generativeai` SDK: that
+package pulls in the gRPC and protobuf stack, roughly 150MB installed, which is
+a real cost against a 1GB memory limit and a slow, failure-prone build step.
+Secrets can be changed at any time from the Streamlit Cloud dashboard, so the
+chat can be switched on after the app is already live.
 
 Without a key the Chat tab explains that it is unavailable and every other
 section works normally. Note that the deployed app runs on the **synthetic
