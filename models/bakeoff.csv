@@ -1,3 +1,4 @@
 name,pr_auc,roc_auc,brier,log_loss,fit_seconds,supports_shap,notes,best_iteration,pr_auc_std,pr_auc_stderr
-logistic,0.3349,0.8285,0.1473,0.453,0.5,False,"Interpretable baseline; needs imputation, one-hot and scaling.",,0.0765,0.0342
-lightgbm,0.3101,0.8292,0.0906,0.2963,2.2,True,Native NaN and categorical handling; exact SHAP TreeExplainer; fastest.,62.0,0.0516,0.0231
+lightgbm,0.272,0.7811,0.1711,0.5125,33.4,True,Native NaN and categorical handling; exact SHAP TreeExplainer; fastest.,371.0,0.0074,0.0033
+catboost,0.2705,0.7809,0.1801,0.5373,209.4,True,"Ordered boosting, strong categorical handling; slower to fit.",387.0,0.0087,0.0039
+logistic,0.248,0.7666,0.1961,0.5762,36.2,False,"Interpretable baseline; needs imputation, one-hot and scaling.",,0.0059,0.0026

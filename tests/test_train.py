@@ -222,3 +222,30 @@ def test_metrics_record_the_search(trained_artifacts) -> None:
     tuning = trained_artifacts["metrics"]["tuning"]
     assert "enabled" in tuning
     assert tuning["scoring"] == "average_precision"
+
+
+def test_guard_blocks_overwriting_a_larger_model(tmp_path) -> None:
+    """A sample-mode run must not silently replace a model trained on real data.
+
+    This happened twice during development -- once from the test suite, once
+    from a manual command -- and both times the only symptom was the reported
+    metrics quietly changing.
+    """
+    from src.ml.train import METRICS_FILE, ArtifactOverwriteError, _guard_existing_artifacts
+    from src.utils.helpers import write_json
+
+    write_json({"n_rows": 307_511}, tmp_path / METRICS_FILE)
+
+    with pytest.raises(ArtifactOverwriteError, match="307,511"):
+        _guard_existing_artifacts(tmp_path, n_rows=4_000)
+
+    # Explicit override, a comparable retrain, and a larger one all proceed.
+    _guard_existing_artifacts(tmp_path, n_rows=4_000, force=True)
+    _guard_existing_artifacts(tmp_path, n_rows=307_511)
+    _guard_existing_artifacts(tmp_path, n_rows=400_000)
+
+
+def test_guard_is_silent_on_a_first_run(tmp_path) -> None:
+    from src.ml.train import _guard_existing_artifacts
+
+    _guard_existing_artifacts(tmp_path, n_rows=1_000)

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any, Final
 
 import joblib
@@ -48,7 +49,7 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from src.data.loader import build_dataset, split_features_target
 from src.data.preprocessor import CreditPreprocessor
 from src.utils.config import settings
-from src.utils.helpers import bound_probability, write_json
+from src.utils.helpers import bound_probability, read_json, write_json
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -749,10 +750,54 @@ def _set_n_estimators(model: Any, name: str, rounds: int) -> None:
         model.set_params(iterations=rounds)
 
 
+class ArtifactOverwriteError(RuntimeError):
+    """Raised when a training run would replace a model fitted to more data."""
+
+
+def _guard_existing_artifacts(directory: Path, n_rows: int, force: bool = False) -> None:
+    """Refuse to overwrite artifacts trained on substantially more data.
+
+    This exists because it happened twice. Running the pipeline in sample mode
+    silently replaced a model fitted to all 307,511 rows with one fitted to
+    4,000 synthetic ones, and the only symptom was the reported metrics quietly
+    changing -- discovered both times by chance rather than by a failure.
+
+    A training run that shrinks the training set by more than half is almost
+    always a mistake, so it stops and says so. Pass ``force=True`` (or
+    ``--force`` on the command line) when it is deliberate.
+
+    Args:
+        directory: Where artifacts would be written.
+        n_rows: Rows in the current training run.
+        force: Overwrite regardless.
+
+    Raises:
+        ArtifactOverwriteError: If existing artifacts used far more data.
+    """
+    metrics_path = directory / METRICS_FILE
+    if force or not metrics_path.exists():
+        return
+    try:
+        existing_rows = int(read_json(metrics_path).get("n_rows", 0))
+    except (ValueError, OSError):  # pragma: no cover - unreadable metrics
+        return
+
+    if existing_rows > 2 * n_rows:
+        raise ArtifactOverwriteError(
+            f"Refusing to overwrite: the saved model was trained on {existing_rows:,} rows "
+            f"and this run used only {n_rows:,}. That is usually a sample-mode run about to "
+            f"replace a real one.\n"
+            f"  - To train on the full data instead: DATA_MODE=real python -m src.ml.train\n"
+            f"  - To overwrite deliberately:         python -m src.ml.train --force\n"
+            f"  - To train without saving:           train(save=False)"
+        )
+
+
 def train(
     save: bool = True,
     candidates: list[str] | None = None,
     tune: bool | None = None,
+    force: bool = False,
 ) -> dict[str, Any]:
     """Run the full training pipeline and persist every artifact.
 
@@ -763,6 +808,8 @@ def train(
     Args:
         save: Write artifacts to ``models/``. Set False in tests.
         candidates: Restrict the bake-off; defaults to all three.
+        force: Overwrite saved artifacts even if they were trained on far more
+            data than this run. See :func:`_guard_existing_artifacts`.
         tune: Run a randomised hyperparameter search before the bake-off.
             Defaults to ``settings.tune_hyperparameters``. Every candidate is
             tuned, not just the expected winner -- tuning one model and
@@ -891,6 +938,7 @@ def train(
 
     if save:
         directory = settings.models_dir
+        _guard_existing_artifacts(directory, len(features), force=force)
         joblib.dump(final_model, directory / MODEL_FILE)
         joblib.dump(preprocessor, directory / PREPROCESSOR_FILE)
         joblib.dump(calibrator, directory / CALIBRATOR_FILE)
@@ -928,10 +976,14 @@ def main() -> dict[str, Any]:  # pragma: no cover - CLI entry point
     parser.add_argument(
         "--no-tune", action="store_true", help="Skip tuning even if TUNE_HYPERPARAMETERS is set.",
     )
+    parser.add_argument(
+        "--force", action="store_true",
+        help="Overwrite saved artifacts even if they were trained on far more data.",
+    )
     arguments = parser.parse_args()
     tune = True if arguments.tune else (False if arguments.no_tune else None)
 
-    outcome = train(tune=tune)
+    outcome = train(tune=tune, force=arguments.force)
     comparison = outcome["comparison"]
     metrics = outcome["metrics"]
 

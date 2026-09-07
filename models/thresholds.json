@@ -1,34 +1,34 @@
 {
-  "decision_threshold": 0.2,
-  "decision_precision": 0.2698,
-  "decision_recall": 0.6698,
-  "decision_f1": 0.3846,
-  "f2_optimal_threshold": 0.129412,
-  "f2_optimal_recall": 0.7196,
-  "band_low_max": 0.08025,
-  "band_medium_max": 0.2,
+  "decision_threshold": 0.165333,
+  "decision_precision": 0.2667,
+  "decision_recall": 0.4296,
+  "decision_f1": 0.3291,
+  "f2_optimal_threshold": 0.0906,
+  "f2_optimal_recall": 0.6643,
+  "band_low_max": 0.080729,
+  "band_medium_max": 0.165333,
   "band_definition": "Low: predicted default probability at or below the portfolio base rate. Medium: above the base rate but below the tuned decision threshold. High: at or above the tuned decision threshold, i.e. the population the model refers for review.",
   "band_profile": [
     {
       "band": "Low",
-      "n": 2942,
-      "population_share": 73.55,
-      "default_rate": 2.62,
-      "share_of_all_defaults": 23.99
+      "n": 203963,
+      "population_share": 66.33,
+      "default_rate": 3.34,
+      "share_of_all_defaults": 27.43
     },
     {
       "band": "Medium",
-      "n": 291,
-      "population_share": 7.28,
-      "default_rate": 12.03,
-      "share_of_all_defaults": 10.9
+      "n": 64683,
+      "population_share": 21.03,
+      "default_rate": 11.65,
+      "share_of_all_defaults": 30.36
     },
     {
       "band": "High",
-      "n": 767,
-      "population_share": 19.18,
-      "default_rate": 27.25,
-      "share_of_all_defaults": 65.11
+      "n": 38865,
+      "population_share": 12.64,
+      "default_rate": 26.96,
+      "share_of_all_defaults": 42.21
     }
   ],
   "calibration_method": "isotonic",
